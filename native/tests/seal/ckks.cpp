@@ -623,17 +623,18 @@ namespace sealtest
 
         double scale = pow(2.0, 40);
         parms_id_type parms_id = context.first_parms_id();
-        // The previous tolerance of 0.0001 might still be too tight for some CKKS results.
-        // Let's start with a slightly more relaxed one, similar to other SEAL tests, and tighten if possible.
-        double tolerance = 0.01; 
+        
+        double tolerance = 0.0001; 
 
         vector<double> integer_values(slot_count);
-        std::cout << "\nDEBUG: Initializing integer_values for SmallIntegers test:" << std::endl;
+        //std::cout << "\nDEBUG: Initializing integer_values for SmallIntegers test:" << std::endl;
         for (size_t i = 0; i < slot_count; ++i)
         {
             int int_val = (i % 10) - 5;          // Should be e.g., -5, -4, ...
             double double_val = static_cast<double>(int_val); // Should be e.g., -5.0, -4.0, ...
             integer_values[i] = double_val;
+
+            /*
 
             if (i < 5) { // Print only the first few to keep output manageable
                 std::cout << "DEBUG: i=" << i 
@@ -642,13 +643,17 @@ namespace sealtest
                         << ", assigned integer_values[" << i << "]=" << std::fixed << std::setprecision(10) << integer_values[i] 
                         << std::endl;
             }
+            
+            */
         }
 
+        /*
         // ---- PRINT 1: Confirm initialization immediately ----
         std::cout << "DEBUG: After integer_values initialization loop (first 5 values):" << std::endl;
         for (size_t k = 0; k < std::min((size_t)5, slot_count); ++k) {
             std::cout << "DEBUG: integer_values[" << k << "] = " << std::fixed << std::setprecision(10) << integer_values[k] << std::endl;
         }
+        */
 
         Ciphertext ct;
         ASSERT_NO_THROW(encryptor.encode_and_encrypt_ckks(integer_values, parms_id, scale, ct));
@@ -659,11 +664,13 @@ namespace sealtest
         vector<double> decoded_integers;
         ASSERT_NO_THROW(encoder.decode(pt, decoded_integers));
 
+        /*
         std::cout << "DEBUG: Before ASSERT_NEAR loop for SmallIntegers (first 5 values):" << std::endl;
         for (size_t k = 0; k < std::min((size_t)5, slot_count); ++k) {
             std::cout << "DEBUG: integer_values[" << k << "] = " << std::fixed << std::setprecision(20) << integer_values[k]
                       << ", decoded_integers[" << k << "] = " << std::fixed << std::setprecision(20) << decoded_integers[k] << std::endl;
         }
+        */
 
         ASSERT_EQ(slot_count, decoded_integers.size());
         for (size_t i = 0; i < slot_count; ++i)

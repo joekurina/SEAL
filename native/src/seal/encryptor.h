@@ -406,27 +406,20 @@ namespace seal
         }
 
         /**
-        Encodes a vector of double-precision floating-point numbers and then
+        Encodes a vector of double-precision floating-point real numbers and then
         encrypts it using the CKKS scheme with the public key.
-
-        @tparam T Vector value type (double or std::complex<double>)
-        @param[in] values The vector of numbers to encode and encrypt
-        @param[in] parms_id parms_id determining the encryption parameters
-        @param[in] scale Scaling parameter for encoding
-        @param[out] destination The ciphertext to overwrite with the result
-        @param[in] pool The MemoryPoolHandle pointing to a valid memory pool
-        @throws std::logic_error if a public key is not set
-        @throws std::invalid_argument if values are invalid
-        @throws std::invalid_argument if parms_id is not valid
-        @throws std::invalid_argument if scale is not strictly positive
-        @throws std::invalid_argument if encoding is too large
-        @throws std::invalid_argument if pool is uninitialized
         */
-        template <typename T, typename = std::enable_if_t<std::is_same<std::remove_cv_t<T>, double>::value 
-                                        || std::is_same<std::remove_cv_t<T>, std::complex<double>>::value>>
         void encode_and_encrypt_ckks(
-            const std::vector<T> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+            const std::vector<double> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
             MemoryPoolHandle pool = MemoryManager::GetPool()) const;
+
+        /**
+        Encodes a vector of double-precision complex numbers and then
+        encrypts it using the CKKS scheme with the public key.
+        */
+        void encode_and_encrypt_ckks(
+            const std::vector<std::complex<double>> &values, parms_id_type parms_id, double scale,
+            Ciphertext &destination, MemoryPoolHandle pool = MemoryManager::GetPool()) const;
 
         /**
         Enables access to private members of seal::Encryptor for SEAL_C.
