@@ -15,6 +15,10 @@
 #include "seal/util/ntt.h"
 #include <vector>
 
+// includes for the combined encode and encrypt function
+#include <complex>   // for std::complex and std::conj
+#include "seal/ckks.h" // for CKKSEncoder
+
 namespace seal
 {
     /**
@@ -400,6 +404,29 @@ namespace seal
         {
             return encrypt_zero_symmetric(context_.first_parms_id(), pool);
         }
+
+        /**
+        Encodes a vector of double-precision floating-point numbers and then
+        encrypts it using the CKKS scheme with the public key.
+
+        @tparam T Vector value type (double or std::complex<double>)
+        @param[in] values The vector of numbers to encode and encrypt
+        @param[in] parms_id parms_id determining the encryption parameters
+        @param[in] scale Scaling parameter for encoding
+        @param[out] destination The ciphertext to overwrite with the result
+        @param[in] pool The MemoryPoolHandle pointing to a valid memory pool
+        @throws std::logic_error if a public key is not set
+        @throws std::invalid_argument if values are invalid
+        @throws std::invalid_argument if parms_id is not valid
+        @throws std::invalid_argument if scale is not strictly positive
+        @throws std::invalid_argument if encoding is too large
+        @throws std::invalid_argument if pool is uninitialized
+        */
+        template <typename T, typename = std::enable_if_t<std::is_same<std::remove_cv_t<T>, double>::value 
+                                        || std::is_same<std::remove_cv_t<T>, std::complex<double>>::value>>
+        void encode_and_encrypt_ckks(
+            const std::vector<T> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+            MemoryPoolHandle pool = MemoryManager::GetPool()) const;
 
         /**
         Enables access to private members of seal::Encryptor for SEAL_C.

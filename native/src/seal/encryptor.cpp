@@ -315,4 +315,206 @@ namespace seal
             throw invalid_argument("unsupported scheme");
         }
     }
+
+    template <typename T, typename U> void Encryptor::encode_and_encrypt_ckks(
+        const std::vector<T> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+        MemoryPoolHandle pool) const
+    {
+        // --- Phase 1: Encoding (Adapted from CKKSEncoder::encode_internal) ---
+        // Verify parameters for encoding.
+        auto context_data_ptr = context_.get_context_data(parms_id);
+        if (!context_data_ptr)
+        {
+            throw std::invalid_argument("parms_id is not valid for encryption parameters");
+        }
+        if (values.empty()) // Or other checks on values.size() if needed
+        {
+            throw std::invalid_argument("values cannot be empty");
+        }
+        if (values.size() > context_data_ptr->parms().poly_modulus_degree() / 2)
+        {
+            throw std::invalid_argument("values_size is too large");
+        }
+        if (!pool)
+        {
+            throw std::invalid_argument("pool is uninitialized");
+        }
+
+        auto &context_data = *context_data_ptr;
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        std::size_t coeff_modulus_size = coeff_modulus.size();
+        std::size_t coeff_count = parms.poly_modulus_degree();
+        std::size_t slots = coeff_count / 2;
+
+        // Check scale
+        if (scale <= 0 || (static_cast<int>(log2(scale)) + 1 >= context_data.total_coeff_modulus_bit_count()))
+        {
+            throw std::invalid_argument("scale out of bounds");
+        }
+
+        // Create a CKKSEncoder instance to perform encoding (or replicate its relevant parts)
+        // For simplicity here, we instantiate it. In a more optimized version,
+        // you might pre-compute/store CKKSEncoder members if Encryptor is long-lived.
+        CKKSEncoder encoder(context_); // This will re-initialize roots, etc.
+
+        // Temporary Plaintext to hold the encoded values
+        Plaintext encoded_plain(pool);
+        // The CKKSEncoder's encode_internal method is private.
+        // We'll replicate its core logic here.
+        // Or, if you make a helper in CKKSEncoder public/friend, you can call it.
+
+        // --- Start of CKKSEncoder::encode_internal adapted logic ---
+        // From native/src/seal/ckks.h encode_internal
+        std::size_t n = util::mul_safe(slots, std::size_t(2)); // n = coeff_count
+        auto conj_values = util::allocate<std::complex<double>>(n, pool, 0);
+        for (std::size_t i = 0; i < values.size(); i++)
+        {
+            conj_values[encoder.matrix_reps_index_map_[i]] = values[i];
+            conj_values[encoder.matrix_reps_index_map_[i + slots]] = std::conj(values[i]);
+        }
+
+        double fix = scale / static_cast<double>(n);
+        encoder.fft_handler_.transform_from_rev(conj_values.get(), util::get_power_of_two(n), encoder.inv_root_powers_.get(), &fix);
+
+        double max_coeff = 0;
+        for (std::size_t i = 0; i < n; i++)
+        {
+            max_coeff = std::max<>(max_coeff, std::fabs(conj_values[i].real()));
+        }
+        int max_coeff_bit_count = static_cast<int>(std::ceil(std::log2(std::max<>(max_coeff, 1.0)))) + 1;
+        if (max_coeff_bit_count >= context_data.total_coeff_modulus_bit_count())
+        {
+            throw std::invalid_argument("encoded values are too large for CKKS precision");
+        }
+
+        double two_pow_64 = std::pow(2.0, 64);
+        encoded_plain.parms_id() = parms_id_zero; // Important before resize
+        encoded_plain.resize(util::mul_safe(coeff_count, coeff_modulus_size));
+
+        if (max_coeff_bit_count <= 64) // Simplified decomposition from CKKSEncoder
+        {
+            for (std::size_t i = 0; i < n; i++) // n is coeff_count here
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                std::uint64_t coeffu = static_cast<std::uint64_t>(std::fabs(coeffd));
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(util::barrett_reduce_64(coeffu, coeff_modulus[j]), coeff_modulus[j]) :
+                        util::barrett_reduce_64(coeffu, coeff_modulus[j]);
+                }
+            }
+        }
+        else if (max_coeff_bit_count <= 128)
+        {
+            // From native/src/seal/ckks.h
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+
+                std::uint64_t temp_coeffu[2]{ static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64)),
+                                        static_cast<std::uint64_t>(coeffd / two_pow_64) };
+
+                if (is_negative)
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::negate_uint_mod(
+                            util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]), coeff_modulus[j]);
+                    }
+                }
+                else
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]);
+                    }
+                }
+            }
+        }
+        else // Slow case for larger coefficients
+        {
+            // This part involves RNS tool decomposition from CKKSEncoder::encode_internal
+            // See native/src/seal/ckks.h for the full logic
+            auto temp_coeffu(util::allocate_uint(coeff_modulus_size, pool));
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+
+                util::set_zero_uint(coeff_modulus_size, temp_coeffu.get());
+                auto temp_coeffu_ptr = temp_coeffu.get();
+                while (coeffd >= 1)
+                {
+                    *temp_coeffu_ptr++ = static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64));
+                    coeffd /= two_pow_64;
+                }
+                context_data.rns_tool()->base_q()->decompose(temp_coeffu.get(), pool);
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(temp_coeffu[j], coeff_modulus[j]) :
+                        temp_coeffu[j];
+                }
+            }
+        }
+
+        // Transform to NTT domain as CKKS encryption expects NTT form plaintext
+        auto ntt_tables = context_data.small_ntt_tables();
+        for (std::size_t i = 0; i < coeff_modulus_size; i++)
+        {
+            util::ntt_negacyclic_harvey(encoded_plain.data() + (i * coeff_count), ntt_tables[i]);
+        }
+        encoded_plain.parms_id() = parms_id;
+        encoded_plain.scale() = scale;
+        // --- End of CKKSEncoder::encode_internal adapted logic ---
+
+
+        // --- Phase 2: Encryption (Adapted from Encryptor::encrypt_internal for CKKS) ---
+        // Minimal verification that the public key is set
+        if (!is_metadata_valid_for(public_key_, context_))
+        {
+            throw std::logic_error("public key is not set for CKKS combined encode/encrypt");
+        }
+
+        // Encrypt zero first (this sets up the structure of the ciphertext)
+        // For CKKS, the parms_id of the ciphertext will match the plaintext's.
+        // Assuming is_asymmetric=true (public key encryption) and save_seed=false for a standard ciphertext
+        encrypt_zero_internal(parms_id, true, false, destination, pool); //
+
+        // Add the encoded plaintext to c0 of the ciphertext
+        // The plaintext is already in NTT form
+        ConstRNSIter plain_iter(encoded_plain.data(), coeff_count);
+        RNSIter destination_c0_iter = *iter(destination); // Gives iterator to c0
+
+        add_poly_coeffmod(destination_c0_iter, plain_iter, coeff_modulus_size, coeff_modulus, destination_c0_iter); //
+
+        // Set the scale for the destination ciphertext
+        destination.scale() = encoded_plain.scale(); //
+    }
+
+    // Explicit instantiation for T = double
+    template void Encryptor::encode_and_encrypt_ckks<double,
+        std::enable_if_t<
+            std::is_same<std::remove_cv_t<double>, double>::value ||
+            std::is_same<std::remove_cv_t<double>, std::complex<double>>::value
+        >
+    >(
+        const std::vector<double> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+        MemoryPoolHandle pool) const;
+
+    // Explicit instantiation for T = std::complex<double>
+    template void Encryptor::encode_and_encrypt_ckks<std::complex<double>,
+        std::enable_if_t<
+            std::is_same<std::remove_cv_t<std::complex<double>>, double>::value ||
+            std::is_same<std::remove_cv_t<std::complex<double>>, std::complex<double>>::value
+        >
+    >(
+        const std::vector<std::complex<double>> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+        MemoryPoolHandle pool) const;
 } // namespace seal

@@ -11,19 +11,50 @@ cmake_minimum_required(VERSION 3.13)
 #   4. SEAL C++ tests                             #
 ###################################################
 
+#####################################################################
+#                 Start of oneAPI/SYCL Configuration                #
+#####################################################################
+
+# Set the oneAPI DPC++/C++ compiler
+# This should be placed before the project() call to ensure it's used.
+set(CMAKE_C_COMPILER icx)
+set(CMAKE_CXX_COMPILER icpx)
+
+# Define SYCL and FPGA settings
+set(FPGA_DEVICE "Agilex7" CACHE STRING "Target Intel FPGA Device Family")
+set(BASE_CXX_FLAGS "-std=c++17 -Wno-unknown-attributes") # No -fsycl here
+set(FPGA_EMULATOR_FLAGS "-fsycl -fintelfpga -DFPGA_EMULATOR")
+set(FPGA_HARDWARE_FLAGS "-fsycl -fintelfpga -Xshardware -Xstarget=${FPGA_DEVICE} -fsycl-link=early -DFPGA_HARDWARE")
+
+#####################################################################
+#                   End of oneAPI/SYCL Configuration                #
+#####################################################################
+
 # [option] CMAKE_BUILD_TYPE (default: "Release")
 # Build in one of the following modes: Release, Debug, MiniSizeRel, or RelWithDebInfo.
 # Most generators recognize these and can set the compiler flags accordingly. We set
 # the build type here before creating the project to prevent the CMake generator from
 # overriding our default of "Release".
+# [option] CMAKE_BUILD_TYPE
+# Added "Emulator" and "Hardware" for SYCL builds.
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
-        STRINGS "Release" "Debug" "MinSizeRel" "RelWithDebInfo")
 endif()
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
+    STRINGS "Release" "Debug" "MinSizeRel" "RelWithDebInfo" "Emulator" "Hardware")
 message(STATUS "Build type (CMAKE_BUILD_TYPE): ${CMAKE_BUILD_TYPE}")
 
 project(SEAL VERSION 4.1.2 LANGUAGES CXX C)
+
+# Set SYCL-specific compiler flags based on build type
+if(CMAKE_BUILD_TYPE STREQUAL "Emulator")
+    set(CMAKE_CXX_FLAGS "${BASE_CXX_FLAGS} ${FPGA_EMULATOR_FLAGS}")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Hardware")
+    set(CMAKE_CXX_FLAGS "${BASE_CXX_FLAGS} ${FPGA_HARDWARE_FLAGS}")
+else()
+    # For standard CPU builds, just use the base C++ flags
+    set(CMAKE_CXX_FLAGS "${BASE_CXX_FLAGS}")
+endif()
 
 ########################
 # Global configuration #
@@ -48,8 +79,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Make the install target depend on the all target (required by vcpkg)
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY OFF)
 
-# In Debug mode, define SEAL_DEBUG
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+# In Debug mode, define SEAL_DEBUG.
+# We will also enable this for the SYCL Emulator build type.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "Emulator")
     set(SEAL_DEBUG ON)
     # In Debug mode, enable extra compiler flags.
     include(EnableCXXCompilerFlags)
@@ -63,6 +95,11 @@ message(STATUS "Microsoft SEAL debug mode: ${SEAL_DEBUG}")
 set(SEAL_USE_CXX17_OPTION_STR "Use C++17")
 option(SEAL_USE_CXX17 ${SEAL_USE_CXX17_OPTION_STR} ON)
 message(STATUS "SEAL_USE_CXX17: ${SEAL_USE_CXX17}")
+
+# A SYCL-based build requires C++17. This check enforces that dependency.
+if(NOT SEAL_USE_CXX17)
+    message(FATAL_ERROR "The SYCL build requires C++17. Please set SEAL_USE_CXX17=ON.")
+endif()
 
 # Enable features from C++17 if available, disable features if set to OFF.
 include(EnableCXX17)

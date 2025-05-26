@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
-
 # Source files in this directory
 set(SEAL_SOURCE_FILES ${SEAL_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/batchencoder.cpp
@@ -49,9 +48,25 @@ install(
         ${CMAKE_CURRENT_LIST_DIR}/serialization.h
         ${CMAKE_CURRENT_LIST_DIR}/valcheck.h
         ${CMAKE_CURRENT_LIST_DIR}/version.h
+        # Add HAL here as part of the public API
+        ${CMAKE_CURRENT_LIST_DIR}/fpga/fpga.h
     DESTINATION
+        # Headers will be installed to <prefix>/include/SEAL-4.1/seal
+        # So, fpga.h would be installed to <prefix>/include/SEAL-4.1/seal/fpga/fpga.h
+        # ensure include statements are #include "seal/fpga/fpga.h"
         ${SEAL_INCLUDES_INSTALL_DIR}/seal
 )
 
-add_subdirectory(util)
+# Add HAL header to a subdirectory within the installation include directory
+# This ensures #include "seal/fpga/fpga_hal.h" works after installation.
+install(
+    FILES ${CMAKE_CURRENT_LIST_DIR}/fpga/fpga.h
+    DESTINATION ${SEAL_INCLUDES_INSTALL_DIR}/seal/fpga
+)
+
+# Add subdirectories
+add_subdirectory(fpga) # Process the FPGA CMakeLists.txt
+add_subdirectory(util) # Process the util CMakeLists.txt
+
+# Propagate all collected source files (from this directory, fpga, and util) to the parent scope
 set(SEAL_SOURCE_FILES ${SEAL_SOURCE_FILES} PARENT_SCOPE)
