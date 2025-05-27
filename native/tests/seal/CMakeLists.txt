@@ -9,6 +9,7 @@ target_sources(sealtest
         ${CMAKE_CURRENT_LIST_DIR}/encryptionparams.cpp
         ${CMAKE_CURRENT_LIST_DIR}/encryptor.cpp
         ${CMAKE_CURRENT_LIST_DIR}/evaluator.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/fpga.cpp
         ${CMAKE_CURRENT_LIST_DIR}/galoiskeys.cpp
         ${CMAKE_CURRENT_LIST_DIR}/dynarray.cpp
         ${CMAKE_CURRENT_LIST_DIR}/keygenerator.cpp
