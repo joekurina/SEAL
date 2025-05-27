@@ -420,6 +420,23 @@ namespace seal
         void encode_and_encrypt_ckks(
             const std::vector<std::complex<double>> &values, parms_id_type parms_id, double scale,
             Ciphertext &destination, MemoryPoolHandle pool = MemoryManager::GetPool()) const;
+        
+
+        /**
+        Encodes a vector of double-precision floating-point real numbers and then
+        encrypts it using the symmetric CKKS scheme.
+        */
+        void encode_and_encrypt_symmetric_ckks(
+            const std::vector<double> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+            MemoryPoolHandle pool = MemoryManager::GetPool()) const;
+        
+        /**
+        Encodes a vector of double-precision complex numbers and then
+        encrypts it using the symmetric CKKS scheme.
+        */
+        void encode_and_encrypt_symmetric_ckks(
+            const std::vector<std::complex<double>> &values, parms_id_type parms_id, double scale,
+            Ciphertext &destination, MemoryPoolHandle pool = MemoryManager::GetPool()) const;
 
         /**
         Enables access to private members of seal::Encryptor for SEAL_C.

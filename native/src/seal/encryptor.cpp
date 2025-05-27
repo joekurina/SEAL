@@ -403,5 +403,329 @@ namespace seal
         destination.scale() = encoded_plain.scale();
     }
 
+    // Implementation for std::vector<double> with symmetric CKKS encryption
+    void Encryptor::encode_and_encrypt_symmetric_ckks(
+        const std::vector<double> &values, parms_id_type parms_id, double scale, Ciphertext &destination,
+        MemoryPoolHandle pool) const
+    {
+        // --- Phase 1: Encoding ---
+        // This part is identical to the asymmetric version, adapted for std::vector<double> input
+
+        auto context_data_ptr = context_.get_context_data(parms_id);
+        if (!context_data_ptr)
+        {
+            throw std::invalid_argument("parms_id is not valid for encryption parameters");
+        }
+        CKKSEncoder encoder(context_); // Local CKKSEncoder
+        std::size_t current_slots = encoder.slot_count();
+
+        if (values.empty())
+        {
+            throw std::invalid_argument("values cannot be empty");
+        }
+        if (values.size() > current_slots)
+        {
+            throw std::invalid_argument("values_size is too large");
+        }
+        if (!pool)
+        {
+            throw std::invalid_argument("pool is uninitialized");
+        }
+
+        auto &context_data = *context_data_ptr;
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        std::size_t coeff_modulus_size = coeff_modulus.size();
+        std::size_t coeff_count = parms.poly_modulus_degree();
+
+        if (scale <= 0 || (static_cast<int>(log2(scale)) + 1 >= context_data.total_coeff_modulus_bit_count()))
+        {
+            throw std::invalid_argument("scale out of bounds");
+        }
+
+        Plaintext encoded_plain(pool);
+        std::size_t n = coeff_count;
+        auto conj_values = util::allocate<std::complex<double>>(n, pool, std::complex<double>(0.0,0.0));
+
+        for (std::size_t i = 0; i < values.size(); i++)
+        {
+            // Accessing CKKSEncoder private members: requires friend declaration or public getters in CKKSEncoder
+            conj_values[encoder.matrix_reps_index_map_[i]] = std::complex<double>(values[i], 0.0);
+            conj_values[encoder.matrix_reps_index_map_[i + current_slots]] = std::complex<double>(values[i], 0.0); // conj(real) is real
+        }
+        // Remaining slots in conj_values are already zero.
+
+        double fix = scale / static_cast<double>(n);
+        encoder.fft_handler_.transform_from_rev(conj_values.get(), util::get_power_of_two(n), encoder.inv_root_powers_.get(), &fix);
+
+        double max_coeff = 0;
+        for (std::size_t i = 0; i < n; i++)
+        {
+            max_coeff = std::max<>(max_coeff, std::fabs(conj_values[i].real()));
+        }
+        int max_coeff_bit_count = static_cast<int>(std::ceil(std::log2(std::max<>(max_coeff, 1.0)))) + 1;
+        if (max_coeff_bit_count >= context_data.total_coeff_modulus_bit_count())
+        {
+            throw std::invalid_argument("encoded values are too large for CKKS precision");
+        }
+
+        double two_pow_64 = std::pow(2.0, 64);
+        encoded_plain.parms_id() = parms_id_zero;
+        encoded_plain.resize(util::mul_safe(coeff_count, coeff_modulus_size));
+
+        if (max_coeff_bit_count <= 64)
+        {
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                std::uint64_t coeffu = static_cast<std::uint64_t>(std::fabs(coeffd));
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(util::barrett_reduce_64(coeffu, coeff_modulus[j]), coeff_modulus[j]) :
+                        util::barrett_reduce_64(coeffu, coeff_modulus[j]);
+                }
+            }
+        }
+        else if (max_coeff_bit_count <= 128)
+        {
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+                std::uint64_t temp_coeffu[2]{ static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64)),
+                                            static_cast<std::uint64_t>(coeffd / two_pow_64) };
+                if (is_negative)
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::negate_uint_mod(
+                            util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]), coeff_modulus[j]);
+                    }
+                }
+                else
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]);
+                    }
+                }
+            }
+        }
+        else
+        {
+            auto temp_coeffu(util::allocate_uint(coeff_modulus_size, pool));
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+                util::set_zero_uint(coeff_modulus_size, temp_coeffu.get());
+                auto temp_coeffu_ptr = temp_coeffu.get();
+                while (coeffd >= 1)
+                {
+                    *temp_coeffu_ptr++ = static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64));
+                    coeffd /= two_pow_64;
+                }
+                context_data.rns_tool()->base_q()->decompose(temp_coeffu.get(), pool);
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(temp_coeffu[j], coeff_modulus[j]) :
+                        temp_coeffu[j];
+                }
+            }
+        }
+
+        auto ntt_tables = context_data.small_ntt_tables();
+        for (std::size_t i = 0; i < coeff_modulus_size; i++)
+        {
+            util::ntt_negacyclic_harvey(encoded_plain.data() + (i * coeff_count), ntt_tables[i]);
+        }
+        encoded_plain.parms_id() = parms_id;
+        encoded_plain.scale() = scale;
+
+        // --- Phase 2: Symmetric Encryption ---
+        if (!is_metadata_valid_for(secret_key_, context_)) // Check SECRET key
+        {
+            throw std::logic_error("secret key is not set for CKKS symmetric combined encode/encrypt");
+        }
+
+        // Encrypt zero symmetrically.
+        // For symmetric encryption, 'save_seed' is often true to reduce ciphertext size.
+        encrypt_zero_internal(parms_id, false /*is_asymmetric*/, true /*save_seed*/, destination, pool);
+
+        ConstRNSIter plain_iter(encoded_plain.data(), coeff_count);
+        RNSIter destination_c0_iter = *iter(destination);
+        add_poly_coeffmod(destination_c0_iter, plain_iter, coeff_modulus_size, coeff_modulus, destination_c0_iter);
+
+        destination.scale() = encoded_plain.scale();
+    }
+
+    // Implementation for std::vector<std::complex<double>> with symmetric CKKS encryption
+    void Encryptor::encode_and_encrypt_symmetric_ckks(
+        const std::vector<std::complex<double>> &values, parms_id_type parms_id, double scale,
+        Ciphertext &destination, MemoryPoolHandle pool) const
+    {
+        // --- Phase 1: Encoding ---
+        // This part is identical to the asymmetric version for std::complex<double>
+
+        auto context_data_ptr = context_.get_context_data(parms_id);
+        if (!context_data_ptr)
+        {
+            throw std::invalid_argument("parms_id is not valid for encryption parameters");
+        }
+        CKKSEncoder encoder(context_); // Local CKKSEncoder
+        std::size_t current_slots = encoder.slot_count();
+
+        if (values.empty())
+        {
+            throw std::invalid_argument("values cannot be empty");
+        }
+        if (values.size() > current_slots)
+        {
+            throw std::invalid_argument("values_size is too large");
+        }
+        if (!pool)
+        {
+            throw std::invalid_argument("pool is uninitialized");
+        }
+
+        auto &context_data = *context_data_ptr;
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        std::size_t coeff_modulus_size = coeff_modulus.size();
+        std::size_t coeff_count = parms.poly_modulus_degree();
+        // std::size_t slots = coeff_count / 2; // Use current_slots
+
+        if (scale <= 0 || (static_cast<int>(log2(scale)) + 1 >= context_data.total_coeff_modulus_bit_count()))
+        {
+            throw std::invalid_argument("scale out of bounds");
+        }
+
+        Plaintext encoded_plain(pool);
+        std::size_t n = coeff_count;
+        auto conj_values = util::allocate<std::complex<double>>(n, pool, std::complex<double>(0.0,0.0));
+
+        for (std::size_t i = 0; i < values.size(); i++)
+        {
+            // Accessing CKKSEncoder private members
+            conj_values[encoder.matrix_reps_index_map_[i]] = values[i];
+            conj_values[encoder.matrix_reps_index_map_[i + current_slots]] = std::conj(values[i]);
+        }
+        // Remaining slots in conj_values are already zero.
+
+        double fix = scale / static_cast<double>(n);
+        encoder.fft_handler_.transform_from_rev(conj_values.get(), util::get_power_of_two(n), encoder.inv_root_powers_.get(), &fix);
+
+        double max_coeff = 0;
+        for (std::size_t i = 0; i < n; i++)
+        {
+            max_coeff = std::max<>(max_coeff, std::fabs(conj_values[i].real()));
+        }
+        int max_coeff_bit_count = static_cast<int>(std::ceil(std::log2(std::max<>(max_coeff, 1.0)))) + 1;
+        if (max_coeff_bit_count >= context_data.total_coeff_modulus_bit_count())
+        {
+            throw std::invalid_argument("encoded values are too large for CKKS precision");
+        }
+
+        double two_pow_64 = std::pow(2.0, 64);
+        encoded_plain.parms_id() = parms_id_zero;
+        encoded_plain.resize(util::mul_safe(coeff_count, coeff_modulus_size));
+
+        // Identical decomposition logic as for the double version / asymmetric version
+        if (max_coeff_bit_count <= 64)
+        {
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                std::uint64_t coeffu = static_cast<std::uint64_t>(std::fabs(coeffd));
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(util::barrett_reduce_64(coeffu, coeff_modulus[j]), coeff_modulus[j]) :
+                        util::barrett_reduce_64(coeffu, coeff_modulus[j]);
+                }
+            }
+        }
+        else if (max_coeff_bit_count <= 128)
+        {
+             for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+                std::uint64_t temp_coeffu[2]{ static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64)),
+                                            static_cast<std::uint64_t>(coeffd / two_pow_64) };
+                if (is_negative)
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::negate_uint_mod(
+                            util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]), coeff_modulus[j]);
+                    }
+                }
+                else
+                {
+                    for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                    {
+                        encoded_plain[i + (j * coeff_count)] = util::barrett_reduce_128(temp_coeffu, coeff_modulus[j]);
+                    }
+                }
+            }
+        }
+        else
+        {
+            auto temp_coeffu(util::allocate_uint(coeff_modulus_size, pool));
+            for (std::size_t i = 0; i < n; i++)
+            {
+                double coeffd = std::round(conj_values[i].real());
+                bool is_negative = std::signbit(coeffd);
+                coeffd = std::fabs(coeffd);
+                util::set_zero_uint(coeff_modulus_size, temp_coeffu.get());
+                auto temp_coeffu_ptr = temp_coeffu.get();
+                while (coeffd >= 1)
+                {
+                    *temp_coeffu_ptr++ = static_cast<std::uint64_t>(std::fmod(coeffd, two_pow_64));
+                    coeffd /= two_pow_64;
+                }
+                context_data.rns_tool()->base_q()->decompose(temp_coeffu.get(), pool);
+                for (std::size_t j = 0; j < coeff_modulus_size; j++)
+                {
+                    encoded_plain[i + (j * coeff_count)] = is_negative ?
+                        util::negate_uint_mod(temp_coeffu[j], coeff_modulus[j]) :
+                        temp_coeffu[j];
+                }
+            }
+        }
+
+        auto ntt_tables = context_data.small_ntt_tables();
+        for (std::size_t i = 0; i < coeff_modulus_size; i++)
+        {
+            util::ntt_negacyclic_harvey(encoded_plain.data() + (i * coeff_count), ntt_tables[i]);
+        }
+        encoded_plain.parms_id() = parms_id;
+        encoded_plain.scale() = scale;
+
+        // --- Phase 2: Symmetric Encryption ---
+        if (!is_metadata_valid_for(secret_key_, context_)) // Check SECRET key
+        {
+            throw std::logic_error("secret key is not set for CKKS symmetric combined encode/encrypt");
+        }
+
+        // Encrypt zero symmetrically.
+        // 'save_seed' = true is common for symmetric encryption to reduce size, set to false if not desired.
+        encrypt_zero_internal(parms_id, false /*is_asymmetric*/, true /*save_seed*/, destination, pool);
+
+        ConstRNSIter plain_iter(encoded_plain.data(), coeff_count);
+        RNSIter destination_c0_iter = *iter(destination);
+        add_poly_coeffmod(destination_c0_iter, plain_iter, coeff_modulus_size, coeff_modulus, destination_c0_iter);
+
+        destination.scale() = encoded_plain.scale();
+    }
+
 
 } // namespace seal
