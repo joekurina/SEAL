@@ -695,4 +695,510 @@ namespace sealtest
         }
     }
 
+    //////////////////////////////////////////////////////////////////////
+    // TEST COMBINED SYMMETRIC ENCODE AND ENCRYPT (SEPARATED TESTS)
+    //////////////////////////////////////////////////////////////////////
+
+    //--[ Test 1: Complex Inputs ]--//
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricCombined_NonSeeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t slots = 32;
+        parms.set_poly_modulus_degree(slots << 1);
+        parms.set_coeff_modulus(CoeffModulus::Create(slots << 1, { 60, 60, 60, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+
+        vector<complex<double>> input_values(slots);
+        for (size_t i = 0; i < slots; i++)
+        {
+            input_values[i] = complex<double>(static_cast<double>(i) / 10.0, static_cast<double>(i) / 10.0);
+        }
+
+        double scale = (1ULL << 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.5;
+
+        Ciphertext ct_direct;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_direct, MemoryManager::GetPool(), false);
+
+        Plaintext pt_decrypted;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_direct, pt_decrypted));
+
+        vector<complex<double>> decoded_values;
+        encoder.decode(pt_decrypted, decoded_values);
+
+        ASSERT_EQ(input_values.size(), decoded_values.size());
+        for (size_t i = 0; i < slots; ++i)
+        {
+            ASSERT_NEAR(input_values[i].real(), decoded_values[i].real(), tolerance);
+            ASSERT_NEAR(input_values[i].imag(), decoded_values[i].imag(), tolerance);
+        }
+    }
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricCombined_Seeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t slots = 32;
+        parms.set_poly_modulus_degree(slots << 1);
+        parms.set_coeff_modulus(CoeffModulus::Create(slots << 1, { 60, 60, 60, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+
+        vector<complex<double>> input_values(slots);
+        for (size_t i = 0; i < slots; i++)
+        {
+            input_values[i] = complex<double>(static_cast<double>(i) / 10.0, static_cast<double>(i) / 10.0);
+        }
+
+        double scale = (1ULL << 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.5;
+
+        Ciphertext ct_seeded;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_seeded, MemoryManager::GetPool(), true);
+
+        stringstream stream;
+        ct_seeded.save(stream);
+        Ciphertext ct_loaded;
+        ct_loaded.load(context, stream);
+
+        Plaintext pt_decrypted_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_loaded, pt_decrypted_loaded));
+
+        vector<complex<double>> decoded_values_loaded;
+        encoder.decode(pt_decrypted_loaded, decoded_values_loaded);
+
+        for (size_t i = 0; i < slots; ++i)
+        {
+            ASSERT_NEAR(input_values[i].real(), decoded_values_loaded[i].real(), tolerance);
+            ASSERT_NEAR(input_values[i].imag(), decoded_values_loaded[i].imag(), tolerance);
+        }
+    }
+
+    //--[ Test 2: Double Inputs ]--//
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithDoubleInput_NonSeeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 4096;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 40, 30, 40 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        vector<double> input_values(slot_count);
+        for (size_t i = 0; i < slot_count; i++)
+        {
+            input_values[i] = (static_cast<double>(i) * 0.1) - (slot_count * 0.05);
+        }
+
+        double scale = pow(2.0, 30);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.01;
+
+        Ciphertext ct_direct;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_direct, MemoryManager::GetPool(), false);
+
+        Plaintext pt_decrypted;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_direct, pt_decrypted));
+
+        vector<double> decoded_values_double;
+        encoder.decode(pt_decrypted, decoded_values_double);
+
+        ASSERT_EQ(input_values.size(), decoded_values_double.size());
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(input_values[i], decoded_values_double[i], tolerance);
+        }
+    }
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithDoubleInput_Seeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 4096;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 40, 30, 40 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        vector<double> input_values(slot_count);
+        for (size_t i = 0; i < slot_count; i++)
+        {
+            input_values[i] = (static_cast<double>(i) * 0.1) - (slot_count * 0.05);
+        }
+        
+        double scale = pow(2.0, 30);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.01;
+
+        Ciphertext ct_seeded;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_seeded, MemoryManager::GetPool(), true);
+        
+        stringstream stream;
+        ct_seeded.save(stream);
+        Ciphertext ct_loaded;
+        ct_loaded.load(context, stream);
+
+        Plaintext pt_decrypted_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_loaded, pt_decrypted_loaded));
+
+        vector<double> decoded_values_loaded;
+        encoder.decode(pt_decrypted_loaded, decoded_values_loaded);
+
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(input_values[i], decoded_values_loaded[i], tolerance);
+        }
+    }
+
+    //--[ Test 3: Partial Vector ]--//
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithPartialVector_NonSeeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+        size_t input_size = slot_count / 2;
+
+        vector<complex<double>> input_values(input_size);
+        for (size_t i = 0; i < input_size; i++)
+        {
+            input_values[i] = complex<double>(static_cast<double>(i) + 1.0, static_cast<double>(i) * 0.5 + 0.5);
+        }
+
+        double scale = pow(2.0, 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.5;
+
+        Ciphertext ct_direct;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_direct, MemoryManager::GetPool(), false);
+
+        Plaintext pt_decrypted;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_direct, pt_decrypted));
+
+        vector<complex<double>> decoded_values;
+        encoder.decode(pt_decrypted, decoded_values);
+
+        ASSERT_EQ(slot_count, decoded_values.size());
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            if (i < input_size)
+            {
+                ASSERT_NEAR(input_values[i].real(), decoded_values[i].real(), tolerance);
+                ASSERT_NEAR(input_values[i].imag(), decoded_values[i].imag(), tolerance);
+            }
+            else
+            {
+                ASSERT_NEAR(0.0, decoded_values[i].real(), tolerance);
+                ASSERT_NEAR(0.0, decoded_values[i].imag(), tolerance);
+            }
+        }
+    }
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithPartialVector_Seeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+        size_t input_size = slot_count / 2;
+
+        vector<complex<double>> input_values(input_size);
+        for (size_t i = 0; i < input_size; i++)
+        {
+            input_values[i] = complex<double>(static_cast<double>(i) + 1.0, static_cast<double>(i) * 0.5 + 0.5);
+        }
+        
+        double scale = pow(2.0, 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.5;
+
+        Ciphertext ct_seeded;
+        encryptor.encode_and_encrypt_symmetric_ckks(input_values, parms_id, scale, ct_seeded, MemoryManager::GetPool(), true);
+
+        stringstream stream;
+        ct_seeded.save(stream);
+        Ciphertext ct_loaded;
+        ct_loaded.load(context, stream);
+        
+        Plaintext pt_decrypted_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_loaded, pt_decrypted_loaded));
+
+        vector<complex<double>> decoded_values_loaded;
+        encoder.decode(pt_decrypted_loaded, decoded_values_loaded);
+
+        ASSERT_EQ(slot_count, decoded_values_loaded.size());
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            if (i < input_size)
+            {
+                ASSERT_NEAR(input_values[i].real(), decoded_values_loaded[i].real(), tolerance);
+                ASSERT_NEAR(input_values[i].imag(), decoded_values_loaded[i].imag(), tolerance);
+            }
+            else
+            {
+                ASSERT_NEAR(0.0, decoded_values_loaded[i].real(), tolerance);
+                ASSERT_NEAR(0.0, decoded_values_loaded[i].imag(), tolerance);
+            }
+        }
+    }
+
+
+    //--[ Test 4: All Zeros ]--//
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithAllZeros_NonSeeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        double scale = pow(2.0, 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 1e-8;
+
+        // Create a local memory pools for this test
+        MemoryPoolHandle local_pool_complex = MemoryPoolHandle::New();
+        MemoryPoolHandle local_pool_double = MemoryPoolHandle::New();
+
+        // Test with complex zeros
+        vector<complex<double>> zero_values_complex(slot_count, complex<double>(0.0, 0.0));
+        Ciphertext ct_complex;
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            zero_values_complex, parms_id, scale, ct_complex, local_pool_complex, false);
+        Plaintext pt_complex;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_complex, pt_complex));
+        vector<complex<double>> decoded_zeros_complex;
+        encoder.decode(pt_complex, decoded_zeros_complex);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(0.0, decoded_zeros_complex[i].real(), tolerance);
+            ASSERT_NEAR(0.0, decoded_zeros_complex[i].imag(), tolerance);
+        }
+
+        // Test with double zeros
+        vector<double> zero_values_double(slot_count, 0.0);
+        Ciphertext ct_double;
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            zero_values_double, parms_id, scale, ct_double, local_pool_double, false);
+        Plaintext pt_double;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_double, pt_double));
+        vector<double> decoded_zeros_double;
+        encoder.decode(pt_double, decoded_zeros_double);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(0.0, decoded_zeros_double[i], tolerance);
+        }
+    }
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithAllZeros_Seeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        double scale = pow(2.0, 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 1e-8;
+
+        // Create a local memory pool for this test
+        MemoryPoolHandle local_pool = MemoryPoolHandle::New();
+        
+        // Test with complex zeros
+        vector<complex<double>> zero_values_complex(slot_count, complex<double>(0.0, 0.0));
+        Ciphertext ct_complex_seeded;
+        // Pass the local_pool to the function
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            zero_values_complex, parms_id, scale, ct_complex_seeded, local_pool, true);
+        stringstream stream_complex;
+        ct_complex_seeded.save(stream_complex);
+        Ciphertext ct_complex_loaded;
+        ct_complex_loaded.load(context, stream_complex);
+        Plaintext pt_complex_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_complex_loaded, pt_complex_loaded));
+        vector<complex<double>> decoded_zeros_loaded_complex;
+        encoder.decode(pt_complex_loaded, decoded_zeros_loaded_complex);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(0.0, decoded_zeros_loaded_complex[i].real(), tolerance);
+            ASSERT_NEAR(0.0, decoded_zeros_loaded_complex[i].imag(), tolerance);
+        }
+        
+        // Test with double zeros
+        vector<double> zero_values_double(slot_count, 0.0);
+        Ciphertext ct_double_seeded;
+        // Pass the local_pool to the function
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            zero_values_double, parms_id, scale, ct_double_seeded, local_pool, true);
+        stringstream stream_double;
+        ct_double_seeded.save(stream_double);
+        Ciphertext ct_double_loaded;
+        ct_double_loaded.load(context, stream_double);
+        Plaintext pt_double_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_double_loaded, pt_double_loaded));
+        vector<double> decoded_zeros_loaded_double;
+        encoder.decode(pt_double_loaded, decoded_zeros_loaded_double);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(0.0, decoded_zeros_loaded_double[i], tolerance);
+        }
+    }
+
+
+    // Test Case for Small Integers using Symmetric Encryption (with Local Memory Pool)
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithSmallIntegers_NonSeeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        // Using the original scale that works for asymmetric encryption
+        double scale = pow(2.0, 40); 
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.0001;
+
+        // Create a local memory pool for this test
+        MemoryPoolHandle local_pool = MemoryPoolHandle::New();
+
+        vector<double> integer_values(slot_count);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            integer_values[i] = static_cast<double>((int)(i % 10) - 5);
+        }
+
+        Ciphertext ct;
+        // Pass the local_pool to the function
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            integer_values, parms_id, scale, ct, local_pool, false);
+        
+        Plaintext pt;
+        ASSERT_NO_THROW(decryptor.decrypt(ct, pt));
+
+        vector<double> decoded_integers;
+        // Encoder also uses a memory pool, pass the local_pool if its methods accept it,
+        // or ensure it uses a consistent pool if constructed with one.
+        // CKKSEncoder::decode does not take a pool argument directly, but uses the pool from its context/construction.
+        encoder.decode(pt, decoded_integers);
+
+        ASSERT_EQ(slot_count, decoded_integers.size());
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(integer_values[i], decoded_integers[i], tolerance);
+        }
+    }
+
+    TEST(CKKSEncodeEncryptTest, CombinedSymmetricWithSmallIntegers_Seeded)
+    {
+        EncryptionParameters parms(scheme_type::ckks);
+        size_t poly_modulus_degree = 8192;
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+        Encryptor encryptor(context, secret_key);
+        Decryptor decryptor(context, secret_key);
+        CKKSEncoder encoder(context);
+        size_t slot_count = encoder.slot_count();
+
+        // Using the original scale that works for asymmetric encryption
+        double scale = pow(2.0, 40);
+        parms_id_type parms_id = context.first_parms_id();
+        double tolerance = 0.0001;
+
+        // Create a local memory pool for this test
+        MemoryPoolHandle local_pool = MemoryPoolHandle::New();
+        
+        vector<double> integer_values(slot_count);
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            integer_values[i] = static_cast<double>((int)(i % 10) - 5);
+        }
+
+        Ciphertext ct_seeded;
+        // Pass the local_pool to the function
+        encryptor.encode_and_encrypt_symmetric_ckks(
+            integer_values, parms_id, scale, ct_seeded, local_pool, true);
+
+        stringstream stream;
+        // Serialization methods might use the global pool or their own buffers.
+        ct_seeded.save(stream); 
+        Ciphertext ct_loaded;
+        // Load operation might use the global pool if not managed by local_pool through its context.
+        ct_loaded.load(context, stream); 
+        
+        Plaintext pt_loaded;
+        ASSERT_NO_THROW(decryptor.decrypt(ct_loaded, pt_loaded));
+        
+        vector<double> decoded_integers_loaded;
+        encoder.decode(pt_loaded, decoded_integers_loaded);
+
+        ASSERT_EQ(slot_count, decoded_integers_loaded.size());
+        for (size_t i = 0; i < slot_count; ++i)
+        {
+            ASSERT_NEAR(integer_values[i], decoded_integers_loaded[i], tolerance);
+        }
+    }
+
 } // namespace sealtest
