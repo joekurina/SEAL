@@ -23,6 +23,22 @@ namespace seal
         std::vector<std::complex<double>> process_vector_fpga_dummy(
             const std::vector<std::complex<double>> &input_vector);
 
+        /**
+         * @brief Performs an Inverse Fast Fourier Transform (IFFT) on a vector of complex numbers using a SYCL kernel.
+         *
+         * The input vector size must be a power of 2. If not, or if the vector is empty,
+         * an empty vector is returned. The IFFT is performed in-place on a copy of the input data.
+         *
+         * @param input_vector The input vector of complex numbers in the frequency domain.
+         * @param apply_scaling If true (default), scales the output by 1/N. If false, no such scaling is applied.
+         * @return std::vector<std::complex<double>> The processed vector in the time domain.
+         * Returns an empty vector if input size is not a power of 2 or is zero.
+         * @throws std::exception if SYCL execution fails.
+         */
+        std::vector<std::complex<double>> process_vector_ifft_fpga(
+            const std::vector<std::complex<double>> &input_vector,
+            bool apply_scaling = true); // Added apply_scaling parameter
+
     } // namespace fpga
 } // namespace seal
 
