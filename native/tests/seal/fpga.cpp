@@ -8,6 +8,10 @@
 #include <iostream>
 #include <iomanip> // For std::fixed and std::setprecision
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // Use the sealtest namespace, common in other SEAL tests
 namespace sealtest
 {

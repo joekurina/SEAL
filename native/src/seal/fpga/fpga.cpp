@@ -112,5 +112,81 @@ namespace seal
             return output_vector;
         }
 
+        std::vector<std::complex<double>> process_vector_ifft_fpga(
+            const std::vector<std::complex<double>> &input_vector)
+        {
+            size_t n = input_vector.size();
+            if (n == 0 || (n & (n - 1)) != 0) { // Check if n is a power of 2
+                std::cerr << "Input vector size must be a power of 2 and non-zero for IFFT." << std::endl;
+                return {};
+            }
+
+            std::vector<std::complex<double>> output_vector = input_vector;
+
+            try
+            {
+                auto selector = sycl::ext::intel::fpga_emulator_selector_v; // Or sycl::default_selector_v
+                sycl::queue queue(selector, sycl::property_list{sycl::property::queue::enable_profiling{}});
+
+                std::cout << "Running IFFT on SYCL device: "
+                          << queue.get_device().get_info<sycl::info::device::name>()
+                          << std::endl;
+
+                sycl::buffer<std::complex<double>, 1> data_buffer(output_vector.data(), sycl::range<1>(n));
+
+                queue.submit([&](sycl::handler &h) {
+                    auto data_accessor = data_buffer.get_access<sycl::access::mode::read_write>(h);
+
+                    h.single_task<class IFFTKernel>([=]() {
+                        // Bit-reversal permutation (in-place)
+                        size_t j = 0;
+                        for (size_t i = 0; i < n; ++i) {
+                            if (j > i) {
+                                std::complex<double> temp_val = data_accessor[i];
+                                data_accessor[i] = data_accessor[j];
+                                data_accessor[j] = temp_val;
+                            }
+                            size_t bit = n >> 1;
+                            while (j >= bit) {
+                                j -= bit;
+                                bit >>= 1;
+                            }
+                            j += bit;
+                        }
+
+                        // Cooley-Tukey IFFT algorithm (iterative, DIT)
+                        for (size_t len = 2; len <= n; len <<= 1) {
+                            double angle_step = 2.0 * M_PI / len; // Inverse twiddle factor angle (positive)
+                            std::complex<double> wlen_step(cos(angle_step), sin(angle_step));
+                            for (size_t i = 0; i < n; i += len) {
+                                std::complex<double> w(1.0, 0.0);
+                                for (size_t k = 0; k < len / 2; ++k) {
+                                    std::complex<double> u = data_accessor[i + k];
+                                    std::complex<double> v = data_accessor[i + k + len / 2] * w;
+
+                                    data_accessor[i + k] = u + v;
+                                    data_accessor[i + k + len / 2] = u - v;
+                                    w = w * wlen_step;
+                                }
+                            }
+                        }
+
+                        // Scale by 1/N for IFFT
+                        std::complex<double> scale_factor(1.0 / n, 0.0);
+                        for (size_t i = 0; i < n; ++i) {
+                            data_accessor[i] = data_accessor[i] * scale_factor;
+                        }
+                    });
+                });
+                queue.wait_and_throw();
+
+            } catch (const sycl::exception &e) {
+                std::cerr << "SYCL exception in process_vector_ifft_fpga: " << e.what() << std::endl;
+                throw;
+            }
+
+            return output_vector;
+        }
+
     } // namespace fpga
 } // namespace seal
