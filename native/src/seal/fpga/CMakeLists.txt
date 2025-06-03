@@ -4,6 +4,7 @@
 set(SEAL_SOURCE_FILES
     ${SEAL_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/fpga.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/fpga_encoder.cpp
     # Add other .cpp files here
  PARENT_SCOPE)
 

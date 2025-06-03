@@ -1,22 +1,25 @@
-// FPGA test harness
+// native/tests/seal/fpga.cpp
 
 #include "gtest/gtest.h"
 #include "seal/seal.h"          // Main SEAL header
-#include "seal/fpga/fpga.h"     // FPGA header
+#include "seal/fpga/fpga.h"     // Your FPGAEncoder header
+#include "seal/ckks.h"          // For native CKKSEncoder (for decoding)
+#include "seal/encryptionparams.h"
+#include "seal/modulus.h"
+#include "seal/context.h"
+#include "seal/util/rns.h" 
+#include "seal/util/uintarithsmallmod.h" 
+
 #include <vector>
 #include <complex>
 #include <iostream>
 #include <iomanip> // For std::fixed and std::setprecision
-#include <cmath>   // For M_PI, cos, sin, round
+#include <cmath>   // For M_PI, cos, sin, round, std::fabs
 #include <algorithm> // For std::generate
+#include <random>    // For random number generation
 
-// CKKS specific headers
-#include "seal/context.h"
-#include "seal/encryptionparams.h"
-#include "seal/ckks.h"
-#include "seal/modulus.h"
-#include "seal/util/rns.h" 
-#include "seal/util/uintarithsmallmod.h" 
+// SYCL include for the queue
+#include <sycl/sycl.hpp>
 
 
 #ifndef M_PI
@@ -37,26 +40,22 @@ void print_complex_vector(const std::string& label, const std::vector<std::compl
 // Use the sealtest namespace, common in other SEAL tests
 namespace sealtest
 {
-    /*
-    // Dummy test remains the same
-    TEST(FPGATests, ProcessVectorDummyTest)
+    TEST(FPGAEncoderTests, EncodeDecodeAccuracyTest)
     {
-        std::vector<std::complex<double>> input_vector = {{1.0, 2.0}, {-3.5, 4.0}, {0.0, -5.75}, {100.25, 0.0}};
-        std::vector<std::complex<double>> expected_vector;
-        for (const auto& val : input_vector) {
-            expected_vector.push_back({val.real() + 1.0, val.imag()});
-        }
-        std::vector<std::complex<double>> result_vector;
-        ASSERT_NO_THROW(result_vector = seal::fpga::process_vector_fpga_dummy(input_vector));
-        ASSERT_EQ(input_vector.size(), result_vector.size());
-        double tolerance = 1e-9;
-        for (size_t i = 0; i < result_vector.size(); ++i) {
-            ASSERT_NEAR(expected_vector[i].real(), result_vector[i].real(), tolerance);
-            ASSERT_NEAR(expected_vector[i].imag(), result_vector[i].imag(), tolerance);
-        }
-    }
-    */
-   
+        // 1. Set up CKKS parameters
+        seal::EncryptionParameters parms(seal::scheme_type::ckks);
+        
+        std::size_t poly_modulus_degree = 8192; // Example value, must be a power of 2
+        parms.set_poly_modulus_degree(poly_modulus_degree);
+        
+        // Choose CoeffModulus that supports the desired scale and data size
+        // For CKKS, these are primes. Example values:
+        parms.set_coeff_modulus(seal::CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
 
+        // 2. Create SEALContext
+        auto context = seal::SEALContext(parms);
+
+        // 3. Create FPGAEncoder
+    }
 
 } // namespace sealtest
