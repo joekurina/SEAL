@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 #include "gtest/gtest.h"
 #include "seal/seal.h"
 #include "seal/fpga/fpga_encoder.h" // Include the FPGAEncoder header
@@ -34,8 +37,7 @@ namespace sealtest
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); // Use FPGAEncoder for decoding
 
             // Check if decoded values are close to original values
             for (std::size_t i = 0; i < slots; ++i)
@@ -43,11 +45,8 @@ namespace sealtest
                 // Check real part
                 auto tmp_real = std::abs(values[i].real() - result[i].real());
                 ASSERT_TRUE(tmp_real < 0.5);
-                // Check imaginary part (should be close to zero for this specific FPGAEncoder path if it zeros out imag parts)
-                // If FPGAEncoder is expected to preserve imag parts, this check needs to be more robust.
-                // Based on current FPGAEncoder impl, imag part of output from IFFT is zeroed.
+                // Check imaginary part
                 auto tmp_imag = std::abs(values[i].imag() - result[i].imag());
-                 // If original imag was 0, decoded should also be close to 0.
                 ASSERT_TRUE(tmp_imag < 0.5);
             }
         }
@@ -75,14 +74,12 @@ namespace sealtest
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); // Use FPGAEncoder for decoding
 
             for (std::size_t i = 0; i < slots; ++i)
             {
                 auto tmp = std::abs(values[i].real() - result[i].real());
                 ASSERT_TRUE(tmp < 0.5);
-                 // Imaginary part should be close to zero if original was zero
                 ASSERT_NEAR(result[i].imag(), 0.0, 0.5);
             }
         }
@@ -95,7 +92,6 @@ namespace sealtest
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
 
             std::vector<std::complex<double>> values(slots);
-            // srand already called
             int data_bound = (1 << 30);
 
             for (std::size_t i = 0; i < slots; i++)
@@ -103,14 +99,13 @@ namespace sealtest
                 values[i] = {static_cast<double>(rand() % data_bound), 0.0};
             }
 
-            seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
+            seal::fpga::FPGAEncoder encoder(context); 
             double delta = (1ULL << 40);
             seal::Plaintext plain;
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); 
 
             for (std::size_t i = 0; i < slots; ++i)
             {
@@ -128,22 +123,20 @@ namespace sealtest
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
 
             std::vector<std::complex<double>> values(slots);
-            // srand already called
-            int data_bound = (1 << 20); // Reduced bound for smaller primes
+            int data_bound = (1 << 20); 
 
             for (std::size_t i = 0; i < slots; i++)
             {
                 values[i] = {static_cast<double>(rand() % data_bound), 0.0};
             }
 
-            seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
-            double delta = (1ULL << 25); // Adjusted scale
+            seal::fpga::FPGAEncoder encoder(context); 
+            double delta = (1ULL << 25); 
             seal::Plaintext plain;
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); 
 
             for (std::size_t i = 0; i < slots; ++i)
             {
@@ -162,7 +155,6 @@ namespace sealtest
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
 
             std::vector<std::complex<double>> values(slots); 
-            // srand already called
             int data_bound = (1 << 20); 
 
             for (std::size_t i = 0; i < slots; i++)
@@ -170,14 +162,13 @@ namespace sealtest
                 values[i] = {static_cast<double>(rand() % data_bound), 0.0};
             }
 
-            seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
+            seal::fpga::FPGAEncoder encoder(context); 
             double delta = (1ULL << 25); 
             seal::Plaintext plain;
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); 
 
             for (std::size_t i = 0; i < slots; ++i)
             {
@@ -197,7 +188,6 @@ namespace sealtest
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
 
             std::vector<std::complex<double>> values(slots);
-            // srand already called
             int data_bound = (1 << 10); 
 
             for (std::size_t i = 0; i < slots; i++)
@@ -205,14 +195,13 @@ namespace sealtest
                 values[i] = {static_cast<double>(rand() % data_bound), 0.0};
             }
 
-            seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
+            seal::fpga::FPGAEncoder encoder(context); 
             double delta = (1ULL << 20); 
             seal::Plaintext plain;
             encoder.encode(values, context.first_parms_id(), delta, plain);
 
             std::vector<std::complex<double>> result;
-            seal::CKKSEncoder ckks_decoder(context); // Use CKKSEncoder for decoding
-            ckks_decoder.decode(plain, result);
+            encoder.decode(plain, result); 
 
             for (std::size_t i = 0; i < slots; ++i)
             {
@@ -230,7 +219,6 @@ namespace sealtest
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
 
             std::vector<std::complex<double>> values(slots);
-            // srand already called
             int data_bound = (1 << 20);
 
             for (std::size_t i = 0; i < slots; i++)
@@ -238,8 +226,7 @@ namespace sealtest
                 values[i] = {static_cast<double>(rand() % data_bound), 0.0};
             }
 
-            seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
-            seal::CKKSEncoder ckks_decoder(context); // Decoder for verification
+            seal::fpga::FPGAEncoder encoder(context); 
 
             // Sub-case 7a: Very large scale (pow(2.0, 110))
             {
@@ -247,7 +234,7 @@ namespace sealtest
                 seal::Plaintext plain;
                 encoder.encode(values, context.first_parms_id(), delta, plain);
                 std::vector<std::complex<double>> result;
-                ckks_decoder.decode(plain, result);
+                encoder.decode(plain, result); 
 
                 for (std::size_t i = 0; i < slots; ++i)
                 {
@@ -262,7 +249,7 @@ namespace sealtest
                 seal::Plaintext plain;
                 encoder.encode(values, context.first_parms_id(), delta, plain);
                 std::vector<std::complex<double>> result;
-                ckks_decoder.decode(plain, result);
+                encoder.decode(plain, result); 
 
                 for (std::size_t i = 0; i < slots; ++i)
                 {
@@ -287,7 +274,6 @@ namespace sealtest
             parms.set_coeff_modulus(seal::CoeffModulus::Create(poly_degree, { 40, 40, 40, 40 }));
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
             seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
-            seal::CKKSEncoder ckks_decoder(context); // For decoding
 
             srand(static_cast<unsigned>(time(NULL)));
             int data_bound = (1 << 30);
@@ -299,13 +285,13 @@ namespace sealtest
             {
                 double value = static_cast<double>(rand() % data_bound);
                 encoder.encode(value, context.first_parms_id(), delta, plain);
-                ckks_decoder.decode(plain, result);
+                encoder.decode(plain, result); // Use FPGAEncoder for decoding
 
                 for (std::size_t i = 0; i < slots; ++i)
                 {
                     auto tmp = std::abs(value - result[i].real());
                     ASSERT_TRUE(tmp < 0.5);
-                    ASSERT_NEAR(result[i].imag(), 0.0, 0.5); // Imaginary part should be zero
+                    ASSERT_NEAR(result[i].imag(), 0.0, 0.5); 
                 }
             }
         }
@@ -318,8 +304,7 @@ namespace sealtest
             parms.set_coeff_modulus(seal::CoeffModulus::Create(poly_degree, { 40, 40, 40, 40 }));
             seal::SEALContext context(parms, false, seal::sec_level_type::none);
             seal::fpga::FPGAEncoder encoder(context); // Use FPGAEncoder
-            seal::CKKSEncoder ckks_decoder(context); // For decoding
-
+            
             srand(static_cast<unsigned>(time(NULL))); 
             
             // Sub-case 2a: Moderate data bound
@@ -333,7 +318,7 @@ namespace sealtest
                     std::int64_t value = static_cast<std::int64_t>(rand() % data_bound);
                     if (rand() % 2) value = -value; 
                     encoder.encode(value, context.first_parms_id(), plain);
-                    ckks_decoder.decode(plain, result);
+                    encoder.decode(plain, result); // Use FPGAEncoder for decoding
 
                     for (std::size_t i = 0; i < slots; ++i)
                     {
@@ -354,7 +339,7 @@ namespace sealtest
                     std::int64_t value = static_cast<std::int64_t>(rand() % data_bound);
                     if (rand() % 2) value = -value;
                     encoder.encode(value, context.first_parms_id(), plain);
-                    ckks_decoder.decode(plain, result);
+                    encoder.decode(plain, result); // Use FPGAEncoder for decoding
 
                     for (std::size_t i = 0; i < slots; ++i)
                     {
@@ -364,17 +349,6 @@ namespace sealtest
                     }
                 }
             }
-            // Sub-case 2c: Original test had large scale for int64_t, which is not how encode(int64_t,...) works.
-            // The CKKSEncoder::encode(int64_t, ...) and FPGAEncoder::encode(int64_t, ...)
-            // methods do not take a `scale` parameter and implicitly use a scale of 1.0
-            // for the purpose of encoding the integer as a polynomial.
-            // The original test's sub-cases for large scales with int64_t input
-            // are effectively testing the encode(double, scale, ...) path after casting int to double.
-            // If the intent was to test large integer values that might require larger scales
-            // to maintain precision *after* encoding, they should be cast to double first and
-            // encoded using the double overload.
-            // The FPGAEncoder::encode(int64_t, ...) is designed for encoding integers directly
-            // without an explicit scale parameter, similar to CKKSEncoder.
         }
     }
 } // namespace sealtest
