@@ -509,43 +509,44 @@ namespace seal
                 // So, fft_input_values_k = P_double_k / plain.scale()
                 double inv_scale_for_fft_input = 1.0 / plain.scale();
 
-                double two_pow_64 = std::pow(2.0, 64);
-                auto decryption_modulus = context_data.total_coeff_modulus();
-                auto upper_half_threshold = context_data.upper_half_threshold();
+                double two_pow_64 = std::pow(2.0, 64); // 2^64
+                auto decryption_modulus = context_data.total_coeff_modulus(); // Q
+                auto upper_half_threshold = context_data.upper_half_threshold(); // Q/2
                 
                 // Temporary buffer for multi-precision subtraction result if needed
                 auto magnitude_ptr_alloc = util::allocate_uint(coeff_modulus_size, pool);
                 uint64_t* magnitude_ptr = magnitude_ptr_alloc.get();
 
-                for (std::size_t i = 0; i < coeff_count; i++)
+                for (std::size_t i = 0; i < coeff_count; i++) // For each coefficient in the polynomial
                 {
                     const uint64_t* coeff_composed_ptr = plain_copy_poly_ptr.get() + (i * coeff_modulus_size);
                     double current_val_double = 0;
-                    double current_power_of_2_64 = 1.0; 
-
+                    
                     if (util::is_greater_than_or_equal_uint(coeff_composed_ptr, upper_half_threshold, coeff_modulus_size))
                     {
                         // It's negative. Actual value is coeff_composed_ptr - Q.
-                        // We compute Q - coeff_composed_ptr to get the magnitude of the negative value.
+                        // We compute Q - coeff_composed_ptr to get the positive magnitude of the negative value.
                         util::sub_uint(decryption_modulus, coeff_composed_ptr, coeff_modulus_size, magnitude_ptr);
+                        // Reconstruct double from magnitude_ptr (limbs of Q - coeff_composed_ptr)
+                        double factor = 1.0;
                         for (size_t k = 0; k < coeff_modulus_size; k++)
                         {
-                            current_val_double += static_cast<double>(magnitude_ptr[k]) * current_power_of_2_64;
-                            if (k < coeff_modulus_size - 1) 
-                            {
-                                 current_power_of_2_64 *= two_pow_64;
+                            current_val_double += static_cast<double>(magnitude_ptr[k]) * factor;
+                            if (k < coeff_modulus_size - 1) { // Avoid overflow if factor gets too large
+                                factor *= two_pow_64;
                             }
                         }
-                        current_val_double = -current_val_double;
+                        current_val_double = -current_val_double; // Apply the negative sign
                     }
                     else // It's positive or zero
                     {
+                        // Reconstruct double from coeff_composed_ptr (limbs of the positive value)
+                        double factor = 1.0;
                         for (size_t k = 0; k < coeff_modulus_size; k++)
                         {
-                            current_val_double += static_cast<double>(coeff_composed_ptr[k]) * current_power_of_2_64;
-                             if (k < coeff_modulus_size - 1)
-                            {
-                                 current_power_of_2_64 *= two_pow_64;
+                            current_val_double += static_cast<double>(coeff_composed_ptr[k]) * factor;
+                            if (k < coeff_modulus_size - 1) { // Avoid overflow if factor gets too large
+                                factor *= two_pow_64;
                             }
                         }
                     }
