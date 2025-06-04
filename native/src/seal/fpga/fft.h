@@ -4,6 +4,10 @@
 #include <cmath>
 #include <cstddef>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace seal
 {
     namespace fpga
@@ -44,7 +48,7 @@ namespace seal
                     const std::size_t m  = std::size_t(1) << s;   // m = 2^s
                     const std::size_t m2 = m >> 1;                 // m/2
                     // w_m = e^{2πi / m}
-                    const double theta = 2.0 * PI / double(m);
+                    const double theta = 2.0 * M_PI / double(m);
                     const std::complex<double> w_m(std::cos(theta), std::sin(theta));
 
                     for (std::size_t k = 0; k < N; k += m)
@@ -78,7 +82,7 @@ namespace seal
                     const std::size_t m  = std::size_t(1) << s;
                     const std::size_t m2 = m >> 1;
                     // w_m_inv = e^{-2πi / m}
-                    const double theta = -2.0 * PI / double(m);
+                    const double theta = -2.0 * M_PI / double(m);
                     const std::complex<double> w_m_inv(std::cos(theta), std::sin(theta));
 
                     for (std::size_t k = 0; k < N; k += m)
@@ -98,7 +102,7 @@ namespace seal
             }
 
         private:
-            static constexpr double PI = std::acos(-1.0);
+            //static const double PI = std::acos(-1.0);
 
             /**
             Performs an in-place bit-reversal reordering on `values[0..N-1]`,
