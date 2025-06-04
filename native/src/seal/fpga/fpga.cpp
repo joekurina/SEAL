@@ -1,6 +1,6 @@
 // native/src/seal/fpga/fpga.cpp
 #include "seal/fpga/fpga.h"
-#include "seal/fpga/ifft.h" // Should contain CKKSInverseTransformKernel definition
+//#include "seal/fpga/ifft.h" // Should contain CKKSInverseTransformKernel definition
 
 // Essential SEAL headers
 #include "seal/encryptionparams.h"

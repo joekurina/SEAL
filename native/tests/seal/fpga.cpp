@@ -2,8 +2,7 @@
 
 #include "gtest/gtest.h"
 #include "seal/seal.h"          // Main SEAL header
-#include "seal/fpga/fpga.h"     // Your FPGAEncoder header
-#include "seal/ckks.h"          // For native CKKSEncoder (for decoding)
+#include "seal/fpga/fpga_encoder.h"     // Your FPGAEncoder header
 #include "seal/encryptionparams.h"
 #include "seal/modulus.h"
 #include "seal/context.h"
@@ -17,9 +16,6 @@
 #include <cmath>   // For M_PI, cos, sin, round, std::fabs
 #include <algorithm> // For std::generate
 #include <random>    // For random number generation
-
-// SYCL include for the queue
-#include <sycl/sycl.hpp>
 
 
 #ifndef M_PI
