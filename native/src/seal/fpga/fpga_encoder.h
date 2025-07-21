@@ -73,6 +73,14 @@ namespace seal
          * @par FPGA-Specific Adaptations
          * - Uses NormalFFTHandler for IFFT during encoding and FFT during decoding.
          * - Scaling is applied as a distinct step after IFFT (encoding) and before FFT (decoding).
+         *
+         * @par Precision Limitations
+         * This FPGA-optimized implementation has precision limitations when used with
+         * extremely large coefficient moduli (e.g., >500 total bits). During decoding,
+         * the reconstruction of very large RNS coefficients to double precision can
+         * cause numerical precision loss or overflow. For such extreme parameter sizes,
+         * use the standard CKKSEncoder which employs more robust numerical handling
+         * through DWTHandler.
          */
         class FPGAEncoder
         {
@@ -286,37 +294,22 @@ namespace seal
                 std::fill_n(temp_ifft_values_ptr.get(), n_for_ifft, std::complex<double>(0.0, 0.0));
                 std::complex<double>* conj_values = temp_ifft_values_ptr.get();
 
-                // Embed input values and their conjugates into the IFFT input vector.
-                // values_size is at most slots_ (N/2).
-                // Input values are placed at specific bit-reversed indices.
-                // For real inputs, their conjugates are themselves.
-                // For complex inputs, their complex conjugates are used.
-                for (std::size_t i = 0; i < values_size; i++)
-                {
-                    conj_values[matrix_reps_index_map_[i]] = static_cast<std::complex<double>>(values[i]);
-                    if (std::is_same<T, double>::value) {
-                        // For real T, conj(values[i]) is just values[i] (as a complex number with 0 imaginary part)
-                         conj_values[matrix_reps_index_map_[i + slots_]] = static_cast<std::complex<double>>(values[i]);
-                    } else { 
-                        // For complex T, use std::conj
-                        conj_values[matrix_reps_index_map_[i + slots_]] = std::conj(static_cast<std::complex<double>>(values[i]));
-                    }
-                }
-
-                // Use standard FFT canonical embedding - place values in natural order
-                std::size_t n = coeff_count; // Use N directly, not 2*N
+                // For standard FFT canonical embedding, we need to place values correctly
+                // Standard FFT expects symmetry for real-valued output
+                std::size_t n = coeff_count;
                 
-                // Re-allocate with correct size for standard FFT
-                temp_ifft_values_ptr = util::allocate<std::complex<double>>(n, pool);
-                std::fill_n(temp_ifft_values_ptr.get(), n, std::complex<double>(0.0, 0.0));
-                conj_values = temp_ifft_values_ptr.get();
-
-                // Standard FFT canonical embedding: place values with proper symmetry
+                // Place values in first slots_ positions
                 for (std::size_t i = 0; i < values_size; i++)
                 {
                     conj_values[i] = static_cast<std::complex<double>>(values[i]);
-                    // For real inputs, ensure Hermitian symmetry: conj_values[N-i] = conj(conj_values[i])
-                    if (i > 0) // Skip DC component
+                }
+                
+                // Ensure symmetry for standard FFT
+                // conj_values[0] stays as is (DC component)
+                // For i > 0: conj_values[N-i] = conj(conj_values[i])
+                for (std::size_t i = 1; i < values_size; i++)
+                {
+                    if (n - i < n) // Make sure we don't go out of bounds
                     {
                         conj_values[n - i] = std::conj(static_cast<std::complex<double>>(values[i]));
                     }

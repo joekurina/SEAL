@@ -297,8 +297,8 @@ namespace seal
         // Apply scaling after FFT operations
         void FPGAEncoder::apply_scaling(std::complex<double> *values, std::size_t n, double scale) const
         {
-            // Apply proper scaling for standard FFT
-            // Need to account for the fact that standard FFT has different scaling than DWT
+            // Apply proper CKKS scaling after inverse FFT
+            // The inverse FFT doesn't normalize by N, but CKKS requires this normalization
             double normalization_factor = scale / static_cast<double>(n);
             for (std::size_t i = 0; i < n; i++)
             {
