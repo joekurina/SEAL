@@ -70,6 +70,26 @@ namespace seal
                 pos *= gen;
                 pos &= (m - 1); // Modulo 2N
             }
+
+            // Initialize root powers for FFT operations
+            root_powers_ = util::allocate<std::complex<double>>(coeff_count, pool_);
+            inv_root_powers_ = util::allocate<std::complex<double>>(coeff_count, pool_);
+            
+            // Powers of the primitive 2n-th root have 4-fold symmetry
+            if (m >= 8)
+            {
+                complex_roots_ = std::make_shared<util::ComplexRoots>(util::ComplexRoots(static_cast<std::size_t>(m), pool_));
+                for (std::size_t i = 1; i < coeff_count; i++)
+                {
+                    root_powers_[i] = complex_roots_->get_root(util::reverse_bits(i, logn));
+                    inv_root_powers_[i] = std::conj(complex_roots_->get_root(util::reverse_bits(i - 1, logn) + 1));
+                }
+            }
+            else if (m == 4)
+            {
+                root_powers_[1] = { 0, 1 };
+                inv_root_powers_[1] = { 0, -1 };
+            }
         }
         
         // Internal implementation for encoding a single double value.
@@ -200,7 +220,7 @@ namespace seal
         }
         
         // Internal implementation for encoding a single complex double value.
-        // This uses the vector encoding path (defined in the header) with FFT.
+        // This now implements the CKKS-style approach using FFT/IFFT instead of DWT.
         void FPGAEncoder::encode_internal(
             std::complex<double> value, parms_id_type parms_id, double scale, Plaintext &destination,
             MemoryPoolHandle pool) const
@@ -272,6 +292,18 @@ namespace seal
             // Set final Plaintext properties. Scale for integer encoding is 1.0.
             destination.parms_id() = parms_id;
             destination.scale() = 1.0;
+        }
+
+        // Apply scaling after FFT operations
+        void FPGAEncoder::apply_scaling(std::complex<double> *values, std::size_t n, double scale) const
+        {
+            // Apply proper scaling for standard FFT
+            // Need to account for the fact that standard FFT has different scaling than DWT
+            double normalization_factor = scale / static_cast<double>(n);
+            for (std::size_t i = 0; i < n; i++)
+            {
+                values[i] *= normalization_factor;
+            }
         }
 
     } // namespace fpga

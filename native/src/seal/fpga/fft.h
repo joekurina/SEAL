@@ -126,5 +126,6 @@ namespace seal
                 }
             }
         };
+
     } // namespace fpga
 } // namespace seal

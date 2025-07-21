@@ -14,6 +14,7 @@
 #include "seal/util/uintcore.h"
 #include "seal/util/rns.h"
 #include "seal/util/ntt.h"
+#include "seal/util/croots.h" // For ComplexRoots
 #include "seal/fpga/fft.h" // For NormalFFTHandler
 #include <cmath>
 #include <algorithm>
@@ -302,24 +303,40 @@ namespace seal
                     }
                 }
 
-                // Perform IFFT using NormalFFTHandler. This IFFT is unnormalized.
-                NormalFFTHandler normal_fft_handler;
-                int log_n_val = util::get_power_of_two(n_for_ifft);
-                 if (log_n_val < 0) { 
-                    throw std::logic_error("n_for_ifft (coeff_count) is not a power of two");
-                }
-                normal_fft_handler.inverse_fft(conj_values, log_n_val);
+                // Use standard FFT canonical embedding - place values in natural order
+                std::size_t n = coeff_count; // Use N directly, not 2*N
                 
-                // Scale the real parts of the IFFT output by (scale / N).
-                // The IFFT of a conjugate-symmetric input yields real outputs.
-                double overall_scale_factor = scale / static_cast<double>(n_for_ifft);
-                for (std::size_t i = 0; i < n_for_ifft; i++)
+                // Re-allocate with correct size for standard FFT
+                temp_ifft_values_ptr = util::allocate<std::complex<double>>(n, pool);
+                std::fill_n(temp_ifft_values_ptr.get(), n, std::complex<double>(0.0, 0.0));
+                conj_values = temp_ifft_values_ptr.get();
+
+                // Standard FFT canonical embedding: place values with proper symmetry
+                for (std::size_t i = 0; i < values_size; i++)
                 {
-                    // Result of IFFT on conjugate-symmetric data is real (imaginary part should be close to 0 due to precision).
-                    // We scale the real part.
-                    conj_values[i].real(conj_values[i].real() * overall_scale_factor);
-                    conj_values[i].imag(0.0); // Explicitly zero out imaginary part
+                    conj_values[i] = static_cast<std::complex<double>>(values[i]);
+                    // For real inputs, ensure Hermitian symmetry: conj_values[N-i] = conj(conj_values[i])
+                    if (i > 0) // Skip DC component
+                    {
+                        conj_values[n - i] = std::conj(static_cast<std::complex<double>>(values[i]));
+                    }
                 }
+
+                // Use NormalFFTHandler for inverse FFT
+                NormalFFTHandler fft_handler;
+                int log_n_val = util::get_power_of_two(n);
+                if (log_n_val < 0) { 
+                    throw std::logic_error("n is not a power of two");
+                }
+                
+                // Apply inverse FFT
+                fft_handler.inverse_fft(conj_values, log_n_val);
+                
+                // Apply scaling in separate function
+                apply_scaling(conj_values, n, scale);
+                
+                // Update n_for_ifft to match the new size
+                n_for_ifft = n;
 
                 // Check for coefficient overflow before rounding and RNS decomposition.
                 double max_coeff = 0;
@@ -554,19 +571,20 @@ namespace seal
                     fft_input_values[i] = { current_val_double * inv_scale_for_fft_input, 0.0 };
                 }
 
-                // Perform forward FFT using NormalFFTHandler.
-                NormalFFTHandler normal_fft_handler;
+                // Use NormalFFTHandler for forward FFT
+                NormalFFTHandler fft_handler;
                 int log_n_val = util::get_power_of_two(coeff_count);
                 if (log_n_val < 0) {
                     throw std::logic_error("coeff_count is not a power of two in decode");
                 }
-                normal_fft_handler.forward_fft(fft_input_values, log_n_val);
                 
-                // After FFT_unnorm( IFFT_unnorm(phi_embed)/N ), the result is phi_embed.
-                // No further scaling (like division by N) is needed here.
+                // Apply forward FFT
+                fft_handler.forward_fft(fft_input_values, log_n_val);
+                
+                // Extract values from first slots_ positions (standard FFT embedding)
                 for (std::size_t i = 0; i < slots_; i++)
                 {
-                    std::complex<double> val_from_fft = fft_input_values[matrix_reps_index_map_[i]];
+                    std::complex<double> val_from_fft = fft_input_values[i];
                     destination[i] = seal::from_complex_internal_helper<T>(val_from_fft);
                 }
             }
@@ -575,6 +593,14 @@ namespace seal
             SEALContext context_;
             std::size_t slots_;
             util::Pointer<std::size_t> matrix_reps_index_map_;
+            
+            // Root powers for FFT operations
+            std::shared_ptr<util::ComplexRoots> complex_roots_;
+            util::Pointer<std::complex<double>> root_powers_;
+            util::Pointer<std::complex<double>> inv_root_powers_;
+            
+            // Helper function for scaling
+            void apply_scaling(std::complex<double> *values, std::size_t n, double scale) const;
         };
     } // namespace fpga
 } // namespace seal
