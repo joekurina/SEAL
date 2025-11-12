@@ -49,7 +49,7 @@ install(
         ${CMAKE_CURRENT_LIST_DIR}/valcheck.h
         ${CMAKE_CURRENT_LIST_DIR}/version.h
         # Add HAL here as part of the public API
-        ${CMAKE_CURRENT_LIST_DIR}/fpga/fpga.h
+        #${CMAKE_CURRENT_LIST_DIR}/fpga/fpga.h
     DESTINATION
         # Headers will be installed to <prefix>/include/SEAL-4.1/seal
         # So, fpga.h would be installed to <prefix>/include/SEAL-4.1/seal/fpga/fpga.h
@@ -64,9 +64,28 @@ install(
     DESTINATION ${SEAL_INCLUDES_INSTALL_DIR}/seal/fpga
 )
 
+# Install FPGA SYCL headers if FPGA support is enabled
+if(SEAL_USE_FPGA)
+    install(
+        FILES
+            ${CMAKE_CURRENT_LIST_DIR}/fpga/Inc/SYCL_ckks_sym.h
+            ${CMAKE_CURRENT_LIST_DIR}/fpga/Inc/the_nwc_4k_ntt_sycl.hpp
+        DESTINATION ${SEAL_INCLUDES_INSTALL_DIR}/seal/fpga
+    )
+endif()
+
 # Add subdirectories
 add_subdirectory(fpga) # Process the FPGA CMakeLists.txt
 add_subdirectory(util) # Process the util CMakeLists.txt
 
 # Propagate all collected source files (from this directory, fpga, and util) to the parent scope
 set(SEAL_SOURCE_FILES ${SEAL_SOURCE_FILES} PARENT_SCOPE)
+
+# Propagate FPGA configuration variables to parent scope
+if(SEAL_USE_FPGA)
+    set(SEAL_FPGA_INCLUDE_DIRS ${SEAL_FPGA_INCLUDE_DIRS} PARENT_SCOPE)
+    set(SEAL_FPGA_RTL_LIBRARY ${SEAL_FPGA_RTL_LIBRARY} PARENT_SCOPE)
+    set(SEAL_FPGA_COMPILE_OPTIONS ${SEAL_FPGA_COMPILE_OPTIONS} PARENT_SCOPE)
+    set(SEAL_FPGA_LINK_OPTIONS ${SEAL_FPGA_LINK_OPTIONS} PARENT_SCOPE)
+    set(SEAL_FPGA_DEFINITIONS ${SEAL_FPGA_DEFINITIONS} PARENT_SCOPE)
+endif()

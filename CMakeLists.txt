@@ -478,6 +478,23 @@ if(NOT BUILD_SHARED_LIBS)
         seal_set_secure_compile_options(seal PUBLIC)
     endif()
 
+    # Configure FPGA support if enabled
+    if(SEAL_USE_FPGA)
+        target_include_directories(seal PUBLIC
+            $<BUILD_INTERFACE:${SEAL_FPGA_INCLUDE_DIRS}>
+            $<INSTALL_INTERFACE:${SEAL_INCLUDES_INSTALL_DIR}/seal/fpga>
+        )
+        target_link_libraries(seal PUBLIC ${SEAL_FPGA_RTL_LIBRARY})
+        # Use PRIVATE for compile options to prevent FPGA compilation flags from propagating
+        target_compile_options(seal PRIVATE ${SEAL_FPGA_COMPILE_OPTIONS})
+        # Link options need to be PRIVATE but we need to explicitly link SYCL libraries
+        target_link_options(seal PRIVATE ${SEAL_FPGA_LINK_OPTIONS})
+        # Explicitly link SYCL library (PUBLIC so tests get it too)
+        target_link_libraries(seal PUBLIC sycl)
+        # Keep definitions PUBLIC so tests can use #ifdef SEAL_USE_FPGA
+        target_compile_definitions(seal PUBLIC ${SEAL_FPGA_DEFINITIONS})
+    endif()
+
 # Build only a shared library
 else()
     add_library(seal_shared SHARED ${SEAL_SOURCE_FILES})
@@ -522,6 +539,23 @@ else()
             DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_LIBRARY_PREFIX}
             FILES_MATCHING PATTERN "*hexl*"
             )
+    endif()
+
+    # Configure FPGA support if enabled
+    if(SEAL_USE_FPGA)
+        target_include_directories(seal_shared PUBLIC
+            $<BUILD_INTERFACE:${SEAL_FPGA_INCLUDE_DIRS}>
+            $<INSTALL_INTERFACE:${SEAL_INCLUDES_INSTALL_DIR}/seal/fpga>
+        )
+        target_link_libraries(seal_shared PUBLIC ${SEAL_FPGA_RTL_LIBRARY})
+        # Use PRIVATE for compile options to prevent FPGA compilation flags from propagating
+        target_compile_options(seal_shared PRIVATE ${SEAL_FPGA_COMPILE_OPTIONS})
+        # Link options need to be PRIVATE but we need to explicitly link SYCL libraries
+        target_link_options(seal_shared PRIVATE ${SEAL_FPGA_LINK_OPTIONS})
+        # Explicitly link SYCL library (PUBLIC so tests get it too)
+        target_link_libraries(seal_shared PUBLIC sycl)
+        # Keep definitions PUBLIC so tests can use #ifdef SEAL_USE_FPGA
+        target_compile_definitions(seal_shared PUBLIC ${SEAL_FPGA_DEFINITIONS})
     endif()
 endif()
 

@@ -209,7 +209,7 @@ Makefile
 # Compiled Static libraries
 *.lai
 *.la
-*.a
+#*.a
 *.lib
 # Compiled Dynamic libraries
 *.so
@@ -637,3 +637,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Claude
+CLAUDE.md
+FPGA_TEST_PLAN.md

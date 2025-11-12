@@ -53,6 +53,22 @@ if(SEAL_BUILD_TESTS)
 
     add_subdirectory(seal)
 
+    # If FPGA support is enabled, create a separate library for FPGA code
+    # and link it to the test executable. Based on SEAL-Embedded working example.
+    if(SEAL_USE_FPGA)
+        add_library(sealtest_fpga_kernels OBJECT ${CMAKE_SOURCE_DIR}/native/src/seal/fpga/Src/SYCL_ckks_sym.cpp)
+        # For emulator mode: -fintelfpga with -DFPGA_EMULATOR define
+        target_compile_options(sealtest_fpga_kernels PRIVATE -fsycl -fintelfpga -DFPGA_EMULATOR)
+        target_include_directories(sealtest_fpga_kernels PRIVATE ${CMAKE_SOURCE_DIR}/native/src/seal/fpga/Inc)
+        # Link RTL NTT library to the fpga_kernels object library
+        target_link_libraries(sealtest_fpga_kernels PRIVATE ${CMAKE_SOURCE_DIR}/native/src/seal/fpga/Lib/the_nwc_4k_ntt.a)
+        target_link_libraries(sealtest PRIVATE sealtest_fpga_kernels)
+        # Link with -fsycl -fintelfpga for emulator mode and force -O0 for RTL library compatibility
+        # Also link GMP library (required by RTL NTT library)
+        target_link_options(sealtest PRIVATE -fsycl -fintelfpga -O0)
+        target_link_libraries(sealtest PRIVATE gmp)
+    endif()
+
     if(TARGET SEAL::seal)
         target_link_libraries(sealtest PRIVATE SEAL::seal GTest::gtest)
     elseif(TARGET SEAL::seal_shared)
