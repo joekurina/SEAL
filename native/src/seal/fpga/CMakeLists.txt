@@ -18,11 +18,22 @@ endif()
 if(SEAL_USE_FPGA)
     set(SEAL_SOURCE_FILES
         ${SEAL_SOURCE_FILES}
-        ${CMAKE_CURRENT_LIST_DIR}/Src/SYCL_ckks_sym.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_context.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encoder.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_dwt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ntt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_encrypt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encryptor.cpp
         PARENT_SCOPE)
 else()
     set(SEAL_SOURCE_FILES
         ${SEAL_SOURCE_FILES}
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_context.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encoder.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_dwt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ntt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_encrypt.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encryptor.cpp
         PARENT_SCOPE)
 endif()
 
@@ -33,10 +44,7 @@ if(SEAL_USE_FPGA)
         ${CMAKE_CURRENT_LIST_DIR}/Inc
         PARENT_SCOPE)
 
-    # Export RTL NTT library path
-    set(SEAL_FPGA_RTL_LIBRARY
-        ${CMAKE_CURRENT_LIST_DIR}/Lib/the_nwc_4k_ntt.a
-        PARENT_SCOPE)
+
 
     # FPGA build mode selection
     option(FPGA_EMULATOR "Build for FPGA emulator (CPU-based, no hardware needed)" ON)
