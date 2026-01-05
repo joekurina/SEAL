@@ -83,10 +83,18 @@ namespace seal
 
         std::uint64_t barrett_reduce_128(const std::uint64_t* x, std::uint64_t modulus, const std::uint64_t* ratio)
         {
-            __uint128_t x128 = (static_cast<__uint128_t>(x[1]) << 64) | x[0];
-            __uint128_t ratio128 = (static_cast<__uint128_t>(ratio[1]) << 64) | ratio[0];
+            std::uint64_t x0 = x[0], x1 = x[1];
+            std::uint64_t r0 = ratio[0], r1 = ratio[1];
 
-            __uint128_t q = (x128 * ratio128) >> 128;
+            __uint128_t x0r0 = static_cast<__uint128_t>(x0) * r0;
+            __uint128_t x0r1 = static_cast<__uint128_t>(x0) * r1;
+            __uint128_t x1r0 = static_cast<__uint128_t>(x1) * r0;
+            __uint128_t x1r1 = static_cast<__uint128_t>(x1) * r1;
+
+            __uint128_t mid = x0r1 + x1r0 + (x0r0 >> 64);
+            __uint128_t q = x1r1 + (mid >> 64);
+
+            __uint128_t x128 = (static_cast<__uint128_t>(x1) << 64) | x0;
             __uint128_t r = x128 - q * modulus;
 
             while (r >= modulus)

@@ -1,46 +1,24 @@
-#include "SYCL_ckks_sym.h"
-#include <iostream>
-#include <vector>
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
-using namespace sycl;
+// Placeholder for future SYCL CKKS symmetric encryption kernel integration.
+// This file is compiled as part of the FPGA test suite but the functionality
+// is implemented in the modular kernel pipeline (fpga_pipeline.cpp and related).
 
+#ifdef SEAL_USE_FPGA
 
-// Implementation of the C-compatible function (Main host interface)
-extern "C" void SYCL_encrypt(
+#include <sycl/sycl.hpp>
+#include <sycl/ext/intel/fpga_extensions.hpp>
 
-) {
-
-    // Create queue
-#if FPGA_HARDWARE
-    auto selector = ext::intel::fpga_selector_v;
-#else
-    auto selector = ext::intel::fpga_emulator_selector_v;
-#endif
-    queue q{selector, property::queue::enable_profiling()};
-
-    // Execute the full pipeline
-    pipeline(
-
-    );
-
+namespace seal
+{
+    namespace fpga
+    {
+        namespace sycl_ckks
+        {
+            // Placeholder - actual implementation uses the modular kernel pipeline
+        }
+    }
 }
 
-// Integrated pipeline function with modified NTTKernel_2 call
-void pipeline(
-   
-) {
-   
-    try {
-        // submit kernels
-        q.submit([&](handler &h) {
-
-        });
-
-
-    } catch (std::exception const &e) { // Catch other standard exceptions
-        std::cout << "[Pipeline] STANDARD EXCEPTION CAUGHT!" << std::endl;
-        std::cerr << "Caught a standard exception in pipeline: "
-                  << e.what() << std::endl;
-        std::exit(1);
-    }
-} // End of pipeline function
+#endif // SEAL_USE_FPGA

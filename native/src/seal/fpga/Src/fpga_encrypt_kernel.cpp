@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "../Inc/fpga_encrypt_kernel.h"
+#include "../Inc/fpga_arith.h"
 
 #ifdef SEAL_USE_FPGA
 
@@ -11,16 +12,8 @@ namespace seal
     {
         namespace
         {
-            inline std::uint64_t mod_reduce(std::uint64_t value, std::uint64_t modulus)
-            {
-                return value >= modulus ? value - modulus : value;
-            }
-
-            inline std::uint64_t mul_mod(std::uint64_t a, std::uint64_t b, std::uint64_t modulus)
-            {
-                __uint128_t product = static_cast<__uint128_t>(a) * b;
-                return static_cast<std::uint64_t>(product % modulus);
-            }
+            using arith::mod_reduce;
+            using arith::mul_mod_fpga;
         }
 
         sycl::event submit_encrypt_kernel(sycl::queue& q)
@@ -61,7 +54,7 @@ namespace seal
                             for (std::size_t j = j1; j < j2; j++)
                             {
                                 std::uint64_t u = error_ntt[j];
-                                std::uint64_t v = mul_mod(error_ntt[j + t], w, modulus);
+                                std::uint64_t v = mul_mod_fpga(error_ntt[j + t], w, modulus);
                                 error_ntt[j] = mod_reduce(u + v, modulus);
                                 error_ntt[j + t] = mod_reduce(u + modulus - v, modulus);
                             }
@@ -73,7 +66,7 @@ namespace seal
 
                     for (std::size_t i = 0; i < n; i++)
                     {
-                        std::uint64_t as = mul_mod(pkt.uniform_poly_ntt[i], pkt.secret_key_ntt[i], modulus);
+                        std::uint64_t as = mul_mod_fpga(pkt.uniform_poly_ntt[i], pkt.secret_key_ntt[i], modulus);
                         std::uint64_t neg_as = (as == 0) ? 0 : modulus - as;
                         std::uint64_t m_plus_e = mod_reduce(pkt.plaintext_ntt[i] + error_ntt[i], modulus);
                         c0[i] = mod_reduce(neg_as + m_plus_e, modulus);

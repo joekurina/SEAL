@@ -226,7 +226,9 @@ namespace sealtest
             log_n++;
         }
         params.log_poly_modulus_degree = log_n;
-        params.modulus = 1099511627689ULL;
+
+        auto coeff_modulus = CoeffModulus::Create(poly_modulus_degree_, { 60 });
+        params.modulus = coeff_modulus[0].value();
         params.scale = pow(2.0, 40);
 
         EXPECT_NO_THROW({
@@ -457,6 +459,217 @@ namespace sealtest
             EXPECT_EQ(decrypted_ntt[i], plaintext_ntt[i])
                 << "Decryption formula verification failed at index " << i;
         }
+    }
+
+    TEST_P(FPGAPipelineTest, NTTMatchesSEAL)
+    {
+        size_t n = poly_modulus_degree_;
+        int log_n = log_poly_modulus_degree_;
+
+        EncryptionParameters parms(scheme_type::ckks);
+        parms.set_poly_modulus_degree(n);
+        parms.set_coeff_modulus(CoeffModulus::Create(n, { 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+
+        auto& context_data = *context.first_context_data();
+        auto& coeff_modulus = context_data.parms().coeff_modulus();
+        uint64_t modulus = coeff_modulus[0].value();
+
+        auto ntt_tables = context_data.small_ntt_tables();
+
+        vector<uint64_t> ntt_root_powers(n);
+        for (size_t i = 0; i < n; i++)
+        {
+            ntt_root_powers[i] = ntt_tables->get_from_root_powers(i).operand;
+        }
+
+        default_random_engine rng(12345);
+        uniform_int_distribution<uint64_t> dist(0, modulus - 1);
+
+        vector<uint64_t> input(n);
+        for (size_t i = 0; i < n; i++)
+        {
+            input[i] = dist(rng);
+        }
+
+        vector<uint64_t> fpga_output = input;
+        ntt_forward_host(fpga_output.data(), n, log_n, ntt_root_powers.data(), modulus);
+
+        vector<uint64_t> seal_output = input;
+        util::ntt_negacyclic_harvey(seal_output.data(), *ntt_tables);
+
+        for (size_t i = 0; i < n; i++)
+        {
+            EXPECT_EQ(fpga_output[i], seal_output[i])
+                << "NTT mismatch at index " << i;
+        }
+    }
+
+    TEST_P(FPGAPipelineTest, DWTMatchesSEAL)
+    {
+        size_t n = poly_modulus_degree_;
+        int log_n = log_poly_modulus_degree_;
+        size_t slots = n / 2;
+
+        EncryptionParameters parms(scheme_type::ckks);
+        parms.set_poly_modulus_degree(n);
+        parms.set_coeff_modulus(CoeffModulus::Create(n, { 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        CKKSEncoder seal_encoder(context);
+
+        double scale = pow(2.0, 40);
+
+        default_random_engine rng(54321);
+        uniform_real_distribution<double> dist(-10.0, 10.0);
+
+        vector<double> input(slots);
+        for (size_t i = 0; i < slots; i++)
+        {
+            input[i] = dist(rng);
+        }
+
+        Plaintext seal_pt;
+        seal_encoder.encode(input, scale, seal_pt);
+
+        // SEAL's encode() returns NTT-form data, so we need to inverse-NTT it
+        // to get coefficient form for comparison with FPGA's DWT output
+        auto& context_data = *context.first_context_data();
+        auto& coeff_modulus = context_data.parms().coeff_modulus();
+        auto ntt_tables = context_data.small_ntt_tables();
+        uint64_t modulus = coeff_modulus[0].value();
+
+        vector<uint64_t> seal_coeffs(n);
+        for (size_t i = 0; i < n; i++)
+        {
+            seal_coeffs[i] = seal_pt.data()[i];
+        }
+        util::inverse_ntt_negacyclic_harvey(seal_coeffs.data(), ntt_tables[0]);
+
+        FPGACKKSEncoder fpga_encoder(n);
+        vector<complex<double>> prepared;
+        fpga_encoder.prepare_for_fpga(input, prepared);
+
+        vector<complex<double>> inv_roots(n);
+        double m = static_cast<double>(n << 1);
+        double angle_base = 2.0 * M_PI / m;
+        for (size_t i = 1; i < n; i++)
+        {
+            auto reverse_bits = [](size_t value, int bit_count) {
+                size_t result = 0;
+                for (int j = 0; j < bit_count; j++)
+                {
+                    result = (result << 1) | (value & 1);
+                    value >>= 1;
+                }
+                return result;
+            };
+            size_t inv_idx_real = reverse_bits(i - 1, log_n) + 1;
+            double inv_angle = -angle_base * static_cast<double>(inv_idx_real);
+            inv_roots[i] = complex<double>(cos(inv_angle), sin(inv_angle));
+        }
+
+        double scale_factor = scale / static_cast<double>(n);
+        dwt_inverse_host(prepared.data(), n, log_n, inv_roots.data(), scale_factor);
+
+        uint64_t barrett_ratio[2];
+        compute_barrett_ratio(modulus, barrett_ratio);
+
+        vector<uint64_t> fpga_coeffs(n);
+        scale_and_reduce_host(prepared.data(), fpga_coeffs.data(), n, modulus, barrett_ratio);
+
+        double max_diff = 0.0;
+        for (size_t i = 0; i < n; i++)
+        {
+            int64_t seal_val = static_cast<int64_t>(seal_coeffs[i]);
+            if (seal_val > static_cast<int64_t>(modulus / 2))
+            {
+                seal_val -= static_cast<int64_t>(modulus);
+            }
+
+            int64_t fpga_val = static_cast<int64_t>(fpga_coeffs[i]);
+            if (fpga_val > static_cast<int64_t>(modulus / 2))
+            {
+                fpga_val -= static_cast<int64_t>(modulus);
+            }
+
+            double diff = abs(static_cast<double>(seal_val - fpga_val));
+            max_diff = max(max_diff, diff);
+        }
+
+        // Allow small differences due to floating-point rounding in DWT
+        EXPECT_LT(max_diff, 10.0)
+            << "DWT max coefficient difference " << max_diff << " is too large";
+    }
+
+    TEST_P(FPGAPipelineTest, EncryptionFormulaWithSEAL)
+    {
+        size_t n = poly_modulus_degree_;
+        int log_n = log_poly_modulus_degree_;
+
+        EncryptionParameters parms(scheme_type::ckks);
+        parms.set_poly_modulus_degree(n);
+        parms.set_coeff_modulus(CoeffModulus::Create(n, { 60 }));
+        SEALContext context(parms, false, sec_level_type::none);
+        KeyGenerator keygen(context);
+        SecretKey secret_key = keygen.secret_key();
+
+        auto& context_data = *context.first_context_data();
+        auto& coeff_modulus = context_data.parms().coeff_modulus();
+        auto ntt_tables = context_data.small_ntt_tables();
+        uint64_t modulus = coeff_modulus[0].value();
+
+        vector<uint64_t> ntt_root_powers(n);
+        for (size_t i = 0; i < n; i++)
+        {
+            ntt_root_powers[i] = ntt_tables->get_from_root_powers(i).operand;
+        }
+
+        vector<uint64_t> secret_key_ntt(n);
+        const uint64_t* sk_data = secret_key.data().data();
+        for (size_t i = 0; i < n; i++)
+        {
+            secret_key_ntt[i] = sk_data[i];
+        }
+
+        default_random_engine rng(42);
+        uniform_int_distribution<uint64_t> dist(0, modulus - 1);
+
+        vector<uint64_t> plaintext_ntt(n);
+        for (size_t i = 0; i < n; i++)
+        {
+            plaintext_ntt[i] = dist(rng);
+        }
+
+        vector<int64_t> error_samples(n, 0);
+
+        vector<uint64_t> c0(n), c1(n);
+        encrypt_symmetric_host(
+            plaintext_ntt.data(),
+            secret_key_ntt.data(),
+            plaintext_ntt.data(),
+            error_samples.data(),
+            c0.data(),
+            c1.data(),
+            n,
+            log_n,
+            modulus,
+            ntt_root_powers.data());
+
+        size_t mismatches = 0;
+        for (size_t i = 0; i < n; i++)
+        {
+            __uint128_t prod = static_cast<__uint128_t>(c1[i]) * secret_key_ntt[i];
+            uint64_t c1s = static_cast<uint64_t>(prod % modulus);
+            uint64_t result = c0[i] + c1s;
+            if (result >= modulus)
+                result -= modulus;
+            if (result != plaintext_ntt[i])
+            {
+                mismatches++;
+            }
+        }
+
+        EXPECT_EQ(mismatches, 0u) << "Encryption formula c0 + c1*s != m for " << mismatches << " coefficients";
     }
 
     INSTANTIATE_TEST_SUITE_P(

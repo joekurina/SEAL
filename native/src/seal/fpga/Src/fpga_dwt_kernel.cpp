@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "../Inc/fpga_dwt_kernel.h"
+#include "../Inc/fpga_ifft_core.h"
 
 #ifdef SEAL_USE_FPGA
 
@@ -28,45 +29,22 @@ namespace seal
                         local_roots[i] = pkt.inv_roots[i];
                     }
 
-                    std::complex<double> r, u, v;
-                    std::size_t gap = 1;
-                    std::size_t m = n >> 1;
-                    std::size_t root_idx = 0;
+                    // ==========================================================
+                    // IFFT CORE - RTL REPLACEMENT POINT
+                    // Replace this call with RTL invocation when available.
+                    // Input:  local_values (N complex doubles, bit-reversed)
+                    //         local_roots (N complex twiddles, bit-reversed)
+                    // Output: local_values (N complex doubles, natural order)
+                    // ==========================================================
+                    ifft_dif_core(local_values, local_roots, n);
+                    // ==========================================================
+                    // END IFFT CORE
+                    // ==========================================================
 
-                    while (m > 1)
+                    // Post-processing: Apply CKKS scaling factor
+                    for (std::size_t i = 0; i < n; i++)
                     {
-                        std::size_t offset = 0;
-                        for (std::size_t i = 0; i < m; i++)
-                        {
-                            root_idx++;
-                            r = local_roots[root_idx];
-                            for (std::size_t j = 0; j < gap; j++)
-                            {
-                                std::size_t x_idx = offset + j;
-                                std::size_t y_idx = x_idx + gap;
-                                u = local_values[x_idx];
-                                v = local_values[y_idx];
-                                local_values[x_idx] = u + v;
-                                local_values[y_idx] = (u - v) * r;
-                            }
-                            offset += gap << 1;
-                        }
-                        gap <<= 1;
-                        m >>= 1;
-                    }
-
-                    root_idx++;
-                    r = local_roots[root_idx];
-                    std::complex<double> scaled_r = r * scale_factor;
-
-                    for (std::size_t j = 0; j < gap; j++)
-                    {
-                        std::size_t x_idx = j;
-                        std::size_t y_idx = j + gap;
-                        u = local_values[x_idx];
-                        v = local_values[y_idx];
-                        local_values[x_idx] = (u + v) * scale_factor;
-                        local_values[y_idx] = (u - v) * scaled_r;
+                        local_values[i] *= scale_factor;
                     }
 
                     ScaleReducePacket out_pkt;

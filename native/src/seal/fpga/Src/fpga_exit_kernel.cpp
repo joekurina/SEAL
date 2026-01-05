@@ -11,17 +11,20 @@ namespace seal
     {
         sycl::event submit_exit_kernel(
             sycl::queue& q,
-            FPGAOutputPacket& output)
+            std::size_t* n_out,
+            std::uint64_t* c0_out,
+            std::uint64_t* c1_out)
         {
-            return q.submit([&](sycl::handler& h) {
-                h.single_task<ExitKernel>([&output]() {
+            // Capture USM pointers by value - this is valid for SYCL device kernels
+            return q.submit([=](sycl::handler& h) {
+                h.single_task<ExitKernel>([=]() {
                     CiphertextPacket pkt = pipes::EncryptToExitPipe::read();
 
-                    output.poly_modulus_degree = pkt.n;
+                    *n_out = pkt.n;
                     for (std::size_t i = 0; i < pkt.n; i++)
                     {
-                        output.c0[i] = pkt.c0[i];
-                        output.c1[i] = pkt.c1[i];
+                        c0_out[i] = pkt.c0[i];
+                        c1_out[i] = pkt.c1[i];
                     }
                 });
             });

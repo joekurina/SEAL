@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "../Inc/fpga_ntt.h"
+#include "../Inc/fpga_arith.h"
 #include <cmath>
 #include <cstring>
 
@@ -239,8 +240,8 @@ namespace seal
 
                         std::uint64_t coeff_u = static_cast<std::uint64_t>(coeff_d);
                         
-                        __uint128_t product = static_cast<__uint128_t>(coeff_u) * ratio1;
-                        std::uint64_t tmp = static_cast<std::uint64_t>(product >> 64);
+                        arith::uint128_t product = arith::mul_u64(coeff_u, ratio1);
+                        std::uint64_t tmp = product.hi;
                         tmp = coeff_u - tmp * modulus;
                         if (tmp >= modulus) tmp -= modulus;
                         coeff_u = tmp;
@@ -300,8 +301,7 @@ namespace seal
                                     u -= two_times_modulus;
                                 }
 
-                                __uint128_t product = static_cast<__uint128_t>(local_values[y_idx]) * w;
-                                std::uint64_t v = static_cast<std::uint64_t>(product % modulus);
+                                std::uint64_t v = arith::mul_mod_fpga(local_values[y_idx], w, modulus);
 
                                 local_values[x_idx] = u + v;
                                 local_values[y_idx] = u + two_times_modulus - v;
@@ -370,8 +370,7 @@ namespace seal
                                 local_values[x_idx] = sum;
 
                                 std::uint64_t diff = u + two_times_modulus - v;
-                                __uint128_t product = static_cast<__uint128_t>(diff) * w;
-                                local_values[y_idx] = static_cast<std::uint64_t>(product % modulus);
+                                local_values[y_idx] = arith::mul_mod_fpga(diff, w, modulus);
                             }
                             offset += gap << 1;
                         }
@@ -381,8 +380,7 @@ namespace seal
 
                     root_idx++;
                     std::uint64_t final_w = local_roots[root_idx];
-                    __uint128_t sw_prod = static_cast<__uint128_t>(final_w) * inv_n;
-                    std::uint64_t scaled_w = static_cast<std::uint64_t>(sw_prod % modulus);
+                    std::uint64_t scaled_w = arith::mul_mod_fpga(final_w, inv_n, modulus);
 
                     for (std::size_t j = 0; j < gap; j++)
                     {
@@ -394,12 +392,10 @@ namespace seal
 
                         std::uint64_t sum = u + v;
                         if (sum >= two_times_modulus) sum -= two_times_modulus;
-                        __uint128_t prod1 = static_cast<__uint128_t>(sum) * inv_n;
-                        local_values[x_idx] = static_cast<std::uint64_t>(prod1 % modulus);
+                        local_values[x_idx] = arith::mul_mod_fpga(sum, inv_n, modulus);
 
                         std::uint64_t diff = u + two_times_modulus - v;
-                        __uint128_t prod2 = static_cast<__uint128_t>(diff) * scaled_w;
-                        local_values[y_idx] = static_cast<std::uint64_t>(prod2 % modulus);
+                        local_values[y_idx] = arith::mul_mod_fpga(diff, scaled_w, modulus);
                     }
 
                     for (std::size_t i = 0; i < n; i++)

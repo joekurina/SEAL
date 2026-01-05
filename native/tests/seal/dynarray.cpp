@@ -234,7 +234,7 @@ namespace sealtest
         ASSERT_EQ(&static_cast<util::MemoryPool &>(arr.pool()), addr);
 
         addr = &static_cast<util::MemoryPool &>(arr2.pool());
-        arr = move(arr2);
+        arr = std::move(arr2);
         ASSERT_EQ(&static_cast<util::MemoryPool &>(arr.pool()), addr);
     }
 } // namespace sealtest

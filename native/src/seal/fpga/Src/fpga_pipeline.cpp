@@ -173,14 +173,29 @@ namespace seal
             const FPGAInputPacket& input,
             FPGAOutputPacket& output)
         {
+            std::size_t* n_usm = sycl::malloc_shared<std::size_t>(1, q);
+            std::uint64_t* c0_usm = sycl::malloc_shared<std::uint64_t>(MAX_POLY_DEGREE, q);
+            std::uint64_t* c1_usm = sycl::malloc_shared<std::uint64_t>(MAX_POLY_DEGREE, q);
+
             auto entrance_event = submit_entrance_kernel(q, input);
             auto dwt_event = submit_dwt_inverse_kernel(q);
             auto scale_reduce_event = submit_scale_reduce_kernel(q);
             auto ntt_event = submit_ntt_forward_kernel(q);
             auto encrypt_event = submit_encrypt_kernel(q);
-            auto exit_event = submit_exit_kernel(q, output);
+            auto exit_event = submit_exit_kernel(q, n_usm, c0_usm, c1_usm);
 
             exit_event.wait();
+
+            output.poly_modulus_degree = *n_usm;
+            for (std::size_t i = 0; i < *n_usm; i++)
+            {
+                output.c0[i] = c0_usm[i];
+                output.c1[i] = c1_usm[i];
+            }
+
+            sycl::free(n_usm, q);
+            sycl::free(c0_usm, q);
+            sycl::free(c1_usm, q);
         }
 
         void FPGAPipeline::encrypt_fpga(

@@ -12,6 +12,7 @@
 
 #ifdef SEAL_USE_FPGA
 #include <sycl/sycl.hpp>
+#include <sycl/ext/intel/fpga_extensions.hpp>
 #endif
 
 namespace seal

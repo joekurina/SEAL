@@ -3,6 +3,7 @@
 
 #include "../Inc/fpga_encrypt.h"
 #include "../Inc/fpga_ntt.h"
+#include "../Inc/fpga_arith.h"
 #include <cstring>
 
 namespace seal
@@ -13,8 +14,7 @@ namespace seal
         {
             inline std::uint64_t multiply_mod(std::uint64_t a, std::uint64_t b, std::uint64_t modulus)
             {
-                __uint128_t product = static_cast<__uint128_t>(a) * b;
-                return static_cast<std::uint64_t>(product % modulus);
+                return arith::mul_mod_fpga(a, b, modulus);
             }
         }
 
@@ -99,11 +99,11 @@ namespace seal
             std::vector<std::uint64_t> as(n);
             dyadic_product_mod_host(uniform_poly_ntt, secret_key_ntt, as.data(), n, modulus);
 
-            std::vector<std::uint64_t> as_plus_e(n);
-            add_poly_mod_host(as.data(), error_ntt.data(), as_plus_e.data(), n, modulus);
+            std::vector<std::uint64_t> neg_as(n);
+            negate_poly_mod_host(as.data(), neg_as.data(), n, modulus);
 
             std::vector<std::uint64_t> neg_as_plus_e(n);
-            negate_poly_mod_host(as_plus_e.data(), neg_as_plus_e.data(), n, modulus);
+            add_poly_mod_host(neg_as.data(), error_ntt.data(), neg_as_plus_e.data(), n, modulus);
 
             add_poly_mod_host(neg_as_plus_e.data(), plaintext_ntt, c0_out, n, modulus);
 
@@ -166,8 +166,7 @@ namespace seal
                                 std::uint64_t u = local_error[x_idx];
                                 if (u >= two_times_modulus) u -= two_times_modulus;
 
-                                __uint128_t product = static_cast<__uint128_t>(local_error[y_idx]) * w;
-                                std::uint64_t v = static_cast<std::uint64_t>(product % modulus);
+                                std::uint64_t v = arith::mul_mod_fpga(local_error[y_idx], w, modulus);
 
                                 local_error[x_idx] = u + v;
                                 local_error[y_idx] = u + two_times_modulus - v;
@@ -188,18 +187,17 @@ namespace seal
 
                     for (std::size_t i = 0; i < n; i++)
                     {
-                        __uint128_t product = static_cast<__uint128_t>(uniform_poly_ntt[i]) * secret_key_ntt[i];
-                        local_as[i] = static_cast<std::uint64_t>(product % modulus);
+                        local_as[i] = arith::mul_mod_fpga(uniform_poly_ntt[i], secret_key_ntt[i], modulus);
                     }
 
                     for (std::size_t i = 0; i < n; i++)
                     {
-                        std::uint64_t sum = local_as[i] + local_error[i];
-                        if (sum >= modulus) sum -= modulus;
+                        std::uint64_t neg_as = (local_as[i] == 0) ? 0 : modulus - local_as[i];
 
-                        std::uint64_t neg = (sum == 0) ? 0 : modulus - sum;
+                        std::uint64_t neg_as_plus_e = neg_as + local_error[i];
+                        if (neg_as_plus_e >= modulus) neg_as_plus_e -= modulus;
 
-                        std::uint64_t c0_val = neg + plaintext_ntt[i];
+                        std::uint64_t c0_val = neg_as_plus_e + plaintext_ntt[i];
                         if (c0_val >= modulus) c0_val -= modulus;
 
                         c0_out[i] = c0_val;

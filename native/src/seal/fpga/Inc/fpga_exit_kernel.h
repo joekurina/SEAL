@@ -20,7 +20,9 @@ namespace seal
 
         sycl::event submit_exit_kernel(
             sycl::queue& q,
-            FPGAOutputPacket& output);
+            std::size_t* n_out,
+            std::uint64_t* c0_out,
+            std::uint64_t* c1_out);
 
 #endif
     }

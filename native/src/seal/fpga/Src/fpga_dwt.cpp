@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "../Inc/fpga_dwt.h"
+#include "../Inc/fpga_ifft_core.h"
 #include <cmath>
 
 namespace seal
@@ -15,110 +16,12 @@ namespace seal
             const std::complex<double>* inv_roots,
             double scale_factor)
         {
-            std::complex<double> r, u, v;
-            std::complex<double>* x = nullptr;
-            std::complex<double>* y = nullptr;
+            // IFFT CORE - RTL REPLACEMENT POINT
+            ifft_dif_core(values, inv_roots, n);
 
-            std::size_t gap = 1;
-            std::size_t m = n >> 1;
-            std::size_t root_idx = 0;
-
-            while (m > 1)
+            for (std::size_t i = 0; i < n; i++)
             {
-                std::size_t offset = 0;
-                if (gap < 4)
-                {
-                    for (std::size_t i = 0; i < m; i++)
-                    {
-                        root_idx++;
-                        r = inv_roots[root_idx];
-                        x = values + offset;
-                        y = x + gap;
-                        for (std::size_t j = 0; j < gap; j++)
-                        {
-                            u = *x;
-                            v = *y;
-                            *x++ = u + v;
-                            *y++ = (u - v) * r;
-                        }
-                        offset += gap << 1;
-                    }
-                }
-                else
-                {
-                    for (std::size_t i = 0; i < m; i++)
-                    {
-                        root_idx++;
-                        r = inv_roots[root_idx];
-                        x = values + offset;
-                        y = x + gap;
-                        for (std::size_t j = 0; j < gap; j += 4)
-                        {
-                            u = x[0]; v = y[0];
-                            x[0] = u + v;
-                            y[0] = (u - v) * r;
-
-                            u = x[1]; v = y[1];
-                            x[1] = u + v;
-                            y[1] = (u - v) * r;
-
-                            u = x[2]; v = y[2];
-                            x[2] = u + v;
-                            y[2] = (u - v) * r;
-
-                            u = x[3]; v = y[3];
-                            x[3] = u + v;
-                            y[3] = (u - v) * r;
-
-                            x += 4;
-                            y += 4;
-                        }
-                        offset += gap << 1;
-                    }
-                }
-                gap <<= 1;
-                m >>= 1;
-            }
-
-            root_idx++;
-            r = inv_roots[root_idx];
-            std::complex<double> scaled_r = r * scale_factor;
-            x = values;
-            y = x + gap;
-
-            if (gap < 4)
-            {
-                for (std::size_t j = 0; j < gap; j++)
-                {
-                    u = *x;
-                    v = *y;
-                    *x++ = (u + v) * scale_factor;
-                    *y++ = (u - v) * scaled_r;
-                }
-            }
-            else
-            {
-                for (std::size_t j = 0; j < gap; j += 4)
-                {
-                    u = x[0]; v = y[0];
-                    x[0] = (u + v) * scale_factor;
-                    y[0] = (u - v) * scaled_r;
-
-                    u = x[1]; v = y[1];
-                    x[1] = (u + v) * scale_factor;
-                    y[1] = (u - v) * scaled_r;
-
-                    u = x[2]; v = y[2];
-                    x[2] = (u + v) * scale_factor;
-                    y[2] = (u - v) * scaled_r;
-
-                    u = x[3]; v = y[3];
-                    x[3] = (u + v) * scale_factor;
-                    y[3] = (u - v) * scaled_r;
-
-                    x += 4;
-                    y += 4;
-                }
+                values[i] *= scale_factor;
             }
         }
 
@@ -143,50 +46,12 @@ namespace seal
                         local_roots[i] = inv_roots[i];
                     }
 
-                    std::complex<double> r, u, v;
-                    std::size_t gap = 1;
-                    std::size_t m = n >> 1;
-                    std::size_t root_idx = 0;
-
-                    while (m > 1)
-                    {
-                        std::size_t offset = 0;
-                        for (std::size_t i = 0; i < m; i++)
-                        {
-                            root_idx++;
-                            r = local_roots[root_idx];
-                            for (std::size_t j = 0; j < gap; j++)
-                            {
-                                std::size_t x_idx = offset + j;
-                                std::size_t y_idx = x_idx + gap;
-                                u = local_values[x_idx];
-                                v = local_values[y_idx];
-                                local_values[x_idx] = u + v;
-                                local_values[y_idx] = (u - v) * r;
-                            }
-                            offset += gap << 1;
-                        }
-                        gap <<= 1;
-                        m >>= 1;
-                    }
-
-                    root_idx++;
-                    r = local_roots[root_idx];
-                    std::complex<double> scaled_r = r * scale_factor;
-
-                    for (std::size_t j = 0; j < gap; j++)
-                    {
-                        std::size_t x_idx = j;
-                        std::size_t y_idx = j + gap;
-                        u = local_values[x_idx];
-                        v = local_values[y_idx];
-                        local_values[x_idx] = (u + v) * scale_factor;
-                        local_values[y_idx] = (u - v) * scaled_r;
-                    }
+                    // IFFT CORE - RTL REPLACEMENT POINT
+                    ifft_dif_core(local_values, local_roots, n);
 
                     for (std::size_t i = 0; i < n; i++)
                     {
-                        values[i] = local_values[i];
+                        values[i] = local_values[i] * scale_factor;
                     }
                 });
             });
@@ -215,50 +80,12 @@ namespace seal
                         local_roots[i] = root_acc[i];
                     }
 
-                    std::complex<double> r, u, v;
-                    std::size_t gap = 1;
-                    std::size_t m = n >> 1;
-                    std::size_t root_idx = 0;
-
-                    while (m > 1)
-                    {
-                        std::size_t offset = 0;
-                        for (std::size_t i = 0; i < m; i++)
-                        {
-                            root_idx++;
-                            r = local_roots[root_idx];
-                            for (std::size_t j = 0; j < gap; j++)
-                            {
-                                std::size_t x_idx = offset + j;
-                                std::size_t y_idx = x_idx + gap;
-                                u = local_values[x_idx];
-                                v = local_values[y_idx];
-                                local_values[x_idx] = u + v;
-                                local_values[y_idx] = (u - v) * r;
-                            }
-                            offset += gap << 1;
-                        }
-                        gap <<= 1;
-                        m >>= 1;
-                    }
-
-                    root_idx++;
-                    r = local_roots[root_idx];
-                    std::complex<double> scaled_r = r * scale_factor;
-
-                    for (std::size_t j = 0; j < gap; j++)
-                    {
-                        std::size_t x_idx = j;
-                        std::size_t y_idx = j + gap;
-                        u = local_values[x_idx];
-                        v = local_values[y_idx];
-                        local_values[x_idx] = (u + v) * scale_factor;
-                        local_values[y_idx] = (u - v) * scaled_r;
-                    }
+                    // IFFT CORE - RTL REPLACEMENT POINT
+                    ifft_dif_core(local_values, local_roots, n);
 
                     for (std::size_t i = 0; i < n; i++)
                     {
-                        val_acc[i] = local_values[i];
+                        val_acc[i] = local_values[i] * scale_factor;
                     }
                 });
             });
