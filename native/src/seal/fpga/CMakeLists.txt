@@ -24,6 +24,12 @@ if(SEAL_USE_FPGA)
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ntt.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_encrypt.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encryptor.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_pipeline.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_entrance_kernel.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_dwt_kernel.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ntt_kernel.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_encrypt_kernel.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_exit_kernel.cpp
         PARENT_SCOPE)
 else()
     set(SEAL_SOURCE_FILES
@@ -34,6 +40,7 @@ else()
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ntt.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_encrypt.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_ckks_encryptor.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Src/fpga_pipeline.cpp
         PARENT_SCOPE)
 endif()
 
